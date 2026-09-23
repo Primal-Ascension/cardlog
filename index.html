@@ -299,7 +299,10 @@
 
   <div id="topbar">
     <div id="logo">Card<span>Log</span></div>
-    <div id="sync-pill"><span class="dot" id="sync-dot"></span><span id="sync-text">—</span></div>
+    <div style="display:flex;align-items:center;gap:12px;">
+      <button id="admin-btn" aria-label="Admin" style="background:none;border:none;color:var(--muted);font-size:18px;padding:4px;line-height:1;">🔒</button>
+      <div id="sync-pill"><span class="dot" id="sync-dot"></span><span id="sync-text">—</span></div>
+    </div>
   </div>
 
   <div id="main">
@@ -497,7 +500,7 @@
   // ============================================================
   // CONFIG
   // ============================================================
-  var API_URL = 'https://script.google.com/macros/s/AKfycbwsbrkahFE9Jq_rjWEBrH6b8iP45CiMSIwmC0Nrq3UykF_NAZ5eek0TVPNx6rl-qg4z/exec';
+  var API_URL = 'PASTE_YOUR_APPS_SCRIPT_EXEC_URL_HERE';
 
   // ============================================================
   // STATE
@@ -698,15 +701,12 @@
     sessionStorage.setItem('cardlog.adminSession', '1');
     $('tabbar').classList.add('show');
     document.body.style.paddingBottom = '';
+    $('admin-btn').classList.add('hidden');
     refreshCards();
     showTab('add');
   }
 
-  function checkAdminEntry() {
-    var params = new URLSearchParams(window.location.search);
-    var wantsAdmin = params.get('admin') === '1' || sessionStorage.getItem('cardlog.adminSession') === '1';
-    if (!wantsAdmin) return;
-
+  function attemptAdminEntry() {
     if (state.password) {
       // verify saved password quietly with a ping-equivalent (listAdmin with 0 rows is fine)
       enterAdminMode();
@@ -714,6 +714,18 @@
       $('pw-gate').classList.add('open');
     }
   }
+
+  function checkAdminEntry() {
+    var params = new URLSearchParams(window.location.search);
+    var wantsAdmin = params.get('admin') === '1' || sessionStorage.getItem('cardlog.adminSession') === '1';
+    if (!wantsAdmin) return;
+    attemptAdminEntry();
+  }
+
+  $('admin-btn').addEventListener('click', function () {
+    if (state.admin) return;
+    attemptAdminEntry();
+  });
 
   $('pw-submit').addEventListener('click', submitPassword);
   $('pw-input').addEventListener('keydown', function (e) { if (e.key === 'Enter') submitPassword(); });
