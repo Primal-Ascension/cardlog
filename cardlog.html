@@ -1,0 +1,1318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="CardLog">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="theme-color" content="#1a1a2e">
+<title>CardLog</title>
+<style>
+  :root {
+    --bg: #1a1a2e;
+    --panel: #16213e;
+    --accent: #f5c518;
+    --text: #ffffff;
+    --muted: #8888aa;
+    --border: #2a2a4a;
+    --green: #2ecc71;
+    --blue: #3498db;
+    --yellow: #f1c40f;
+    --orange: #e67e22;
+    --red: #e63946;
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior-y: contain;
+  }
+  body {
+    padding-top: var(--safe-top);
+    padding-bottom: var(--safe-bottom);
+    display: flex;
+    flex-direction: column;
+  }
+  input, select, textarea, button { font-size: 16px; font-family: inherit; }
+  button { cursor: pointer; }
+
+  /* ── Header ── */
+  #topbar {
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel);
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    padding-top: calc(14px + var(--safe-top));
+  }
+  #logo { font-size: 20px; font-weight: 800; letter-spacing: -0.3px; }
+  #logo span { color: var(--accent); }
+  #sync-pill {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .dot.online { background: var(--green); }
+  .dot.offline { background: var(--red); }
+
+  /* ── Main scroll area ── */
+  #main { flex: 1; overflow-y: auto; padding: 16px; padding-bottom: 90px; }
+
+  /* ── Viewer: search / filters ── */
+  #search-row { display: flex; gap: 8px; margin-bottom: 12px; }
+  #search-input {
+    flex: 1;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    color: var(--text);
+  }
+  #search-input:focus { outline: none; border-color: var(--accent); }
+  .chip-row { display: flex; gap: 8px; overflow-x: auto; margin-bottom: 14px; padding-bottom: 2px; }
+  .chip {
+    flex: 0 0 auto;
+    padding: 8px 14px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--muted);
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .chip.active { background: var(--accent); color: #16213e; border-color: var(--accent); }
+
+  /* ── Gallery grid ── */
+  #grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .card-tile {
+    background: var(--panel);
+    border-radius: 12px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    position: relative;
+  }
+  .tile-img-wrap {
+    width: 100%;
+    aspect-ratio: 5 / 7;
+    background: #0f0f22;
+    position: relative;
+    overflow: hidden;
+  }
+  .tile-img-wrap img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .tile-placeholder {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--muted); font-size: 12px; text-align: center; padding: 8px;
+  }
+  .sold-ribbon {
+    position: absolute; top: 10px; left: -30px;
+    background: var(--red); color: #fff;
+    font-size: 11px; font-weight: 800; letter-spacing: 0.5px;
+    padding: 4px 34px; transform: rotate(-35deg);
+    box-shadow: 0 2px 6px rgba(0,0,0,.3);
+  }
+  .tile-body { padding: 10px 12px; }
+  .tile-name { font-size: 14px; font-weight: 700; line-height: 1.2; margin-bottom: 2px; }
+  .tile-sub { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  .tile-bottom { display: flex; align-items: center; justify-content: space-between; }
+  .tile-price { font-size: 16px; font-weight: 800; color: var(--accent); }
+  .badge {
+    font-size: 10px; font-weight: 800; padding: 3px 7px; border-radius: 5px;
+    color: #0a0a1a; letter-spacing: 0.3px;
+  }
+  .badge.NM { background: var(--green); }
+  .badge.LP { background: var(--blue); color: #fff; }
+  .badge.MP { background: var(--yellow); }
+  .badge.HP { background: var(--orange); color: #fff; }
+  .badge.DMG { background: var(--red); color: #fff; }
+  .badge.graded { background: var(--blue); color: #fff; }
+  .tile-sold-btn {
+    width: 100%; margin-top: 8px; padding: 9px;
+    background: var(--green); color: #0a0a1a; font-weight: 800;
+    border: none; border-radius: 8px; font-size: 13px;
+  }
+  .empty-state { text-align: center; padding: 60px 20px; color: var(--muted); }
+
+  /* ── Detail view ── */
+  #detail-overlay {
+    position: fixed; inset: 0; background: var(--bg);
+    z-index: 50; overflow-y: auto; display: none;
+    padding-top: var(--safe-top); padding-bottom: var(--safe-bottom);
+  }
+  #detail-overlay.open { display: block; }
+  .detail-topbar {
+    display: flex; align-items: center; gap: 12px;
+    padding: 14px 16px; border-bottom: 1px solid var(--border);
+  }
+  .back-btn {
+    background: none; border: none; color: var(--text);
+    font-size: 22px; padding: 4px 8px;
+  }
+  .detail-img-wrap {
+    width: 100%; aspect-ratio: 5 / 7; background: #0f0f22;
+    position: relative; overflow: hidden;
+  }
+  .detail-img-wrap img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .flip-hint {
+    position: absolute; bottom: 10px; right: 10px;
+    background: rgba(0,0,0,.55); color: #fff; font-size: 11px;
+    padding: 5px 10px; border-radius: 14px;
+  }
+  .detail-body { padding: 18px 16px; }
+  .detail-name { font-size: 22px; font-weight: 800; margin-bottom: 4px; }
+  .detail-sub { font-size: 14px; color: var(--muted); margin-bottom: 12px; }
+  .detail-badges { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+  .detail-price { font-size: 28px; font-weight: 800; color: var(--accent); margin-bottom: 14px; }
+  .detail-notes { font-size: 14px; color: var(--text); background: var(--panel); border-radius: 10px; padding: 12px; margin-bottom: 14px; }
+  .detail-link { color: var(--accent); font-size: 13px; text-decoration: none; display: inline-block; margin-bottom: 14px; }
+  .detail-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  /* ── Buttons ── */
+  .btn {
+    padding: 12px 18px; border-radius: 10px; border: none;
+    font-weight: 700; font-size: 14px;
+  }
+  .btn-primary { background: var(--accent); color: #16213e; }
+  .btn-ghost { background: var(--panel); color: var(--text); border: 1px solid var(--border); }
+  .btn-danger { background: var(--red); color: #fff; }
+  .btn-block { width: 100%; }
+
+  /* ── Admin bottom tab bar ── */
+  #tabbar {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    background: var(--panel); border-top: 1px solid var(--border);
+    display: none;
+    padding-bottom: var(--safe-bottom);
+    z-index: 30;
+  }
+  #tabbar.show { display: flex; }
+  .tab-btn {
+    flex: 1; background: none; border: none; color: var(--muted);
+    padding: 12px 4px; font-size: 12px; font-weight: 700;
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+  }
+  .tab-btn.active { color: var(--accent); }
+  .tab-btn .icon { font-size: 20px; }
+
+  /* ── Add form ── */
+  .field { margin-bottom: 14px; }
+  .field label { display: block; font-size: 12px; color: var(--muted); font-weight: 700; margin-bottom: 6px; }
+  .field input, .field select, .field textarea {
+    width: 100%; background: var(--panel); border: 1px solid var(--border);
+    border-radius: 10px; padding: 13px 14px; color: var(--text);
+  }
+  .field input:focus, .field select:focus, .field textarea:focus { outline: none; border-color: var(--accent); }
+  .photo-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
+  .photo-tile {
+    aspect-ratio: 5 / 7; border-radius: 12px; border: 2px dashed var(--border);
+    background: var(--panel); display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 6px; position: relative; overflow: hidden;
+  }
+  .photo-tile.filled { border-style: solid; border-color: var(--accent); }
+  .photo-tile img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .photo-tile .cam-icon { font-size: 30px; }
+  .photo-tile .cam-label { font-size: 12px; color: var(--muted); font-weight: 700; }
+  .photo-tile input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+  .retake-badge {
+    position: absolute; bottom: 6px; left: 50%; transform: translateX(-50%);
+    background: rgba(0,0,0,.6); color: #fff; font-size: 10px; font-weight: 700;
+    padding: 4px 10px; border-radius: 10px; z-index: 2; pointer-events: none;
+  }
+  .segmented { display: flex; border-radius: 10px; overflow: hidden; border: 1px solid var(--border); }
+  .segmented button {
+    flex: 1; padding: 11px; background: var(--panel); color: var(--muted);
+    border: none; font-weight: 700; font-size: 13px;
+  }
+  .segmented button.active { background: var(--accent); color: #16213e; }
+  .condition-chips { display: flex; gap: 8px; flex-wrap: wrap; }
+  .cond-chip {
+    padding: 9px 14px; border-radius: 20px; border: 1px solid var(--border);
+    background: var(--panel); color: var(--muted); font-size: 13px; font-weight: 700;
+  }
+  .cond-chip.active.NM { background: var(--green); color: #0a0a1a; border-color: var(--green); }
+  .cond-chip.active.LP { background: var(--blue); color: #fff; border-color: var(--blue); }
+  .cond-chip.active.MP { background: var(--yellow); color: #0a0a1a; border-color: var(--yellow); }
+  .cond-chip.active.HP { background: var(--orange); color: #fff; border-color: var(--orange); }
+  .cond-chip.active.DMG { background: var(--red); color: #fff; border-color: var(--red); }
+  .form-actions { position: sticky; bottom: 76px; padding-top: 6px; }
+  .inline-error { color: var(--red); font-size: 12px; margin-top: 4px; }
+  .banner { background: rgba(230,57,70,.15); border: 1px solid var(--red); color: #ffb3b8; border-radius: 10px; padding: 12px; margin-bottom: 14px; font-size: 13px; }
+  .banner-ok { background: rgba(46,204,113,.15); border: 1px solid var(--green); color: #b6f0cd; }
+  .same-as-last { text-align: center; font-size: 13px; color: var(--accent); padding: 10px; }
+
+  /* ── Modal / bottom sheet ── */
+  .sheet-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 60;
+    display: none; align-items: flex-end; justify-content: center;
+  }
+  .sheet-overlay.open { display: flex; }
+  .sheet {
+    background: var(--panel); width: 100%; max-width: 480px;
+    border-radius: 18px 18px 0 0; padding: 20px 18px;
+    padding-bottom: calc(20px + var(--safe-bottom));
+  }
+  .sheet h3 { font-size: 17px; margin-bottom: 16px; }
+  .sheet-actions { display: flex; gap: 10px; margin-top: 16px; }
+
+  /* ── Password gate ── */
+  #pw-gate {
+    position: fixed; inset: 0; background: var(--bg); z-index: 90;
+    display: none; align-items: center; justify-content: center; padding: 20px;
+  }
+  #pw-gate.open { display: flex; }
+  .pw-box { width: 100%; max-width: 320px; text-align: center; }
+  .pw-box .cam-icon { font-size: 40px; margin-bottom: 12px; }
+  .pw-box h2 { margin-bottom: 18px; }
+
+  /* ── Toast ── */
+  #toast {
+    position: fixed; left: 50%; bottom: 100px; transform: translateX(-50%) translateY(20px);
+    background: var(--panel); border: 1px solid var(--accent); color: var(--text);
+    padding: 12px 20px; border-radius: 12px; font-size: 13px; z-index: 100;
+    opacity: 0; transition: opacity .2s, transform .2s; pointer-events: none;
+    max-width: 90vw; text-align: center;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  .hidden { display: none !important; }
+  .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.3); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .cache-pill { text-align: center; font-size: 12px; color: var(--muted); padding: 8px; background: var(--panel); border-radius: 8px; margin-bottom: 12px; }
+</style>
+</head>
+<body>
+
+  <div id="topbar">
+    <div id="logo">Card<span>Log</span></div>
+    <div id="sync-pill"><span class="dot" id="sync-dot"></span><span id="sync-text">—</span></div>
+  </div>
+
+  <div id="main">
+    <div id="view-gallery">
+      <div id="cache-pill" class="cache-pill hidden">Showing cached inventory</div>
+      <div id="search-row">
+        <input id="search-input" placeholder="Search name, set, number, notes…">
+      </div>
+      <div class="chip-row" id="status-chips"></div>
+      <div id="grid"></div>
+      <div id="empty-state" class="empty-state hidden">No cards match.</div>
+    </div>
+
+    <div id="view-add" class="hidden">
+      <div id="add-banner"></div>
+      <div id="same-as-last-row" class="same-as-last hidden"><button id="same-as-last-btn" class="btn btn-ghost btn-block">Same as last card</button></div>
+
+      <div class="photo-row">
+        <div class="photo-tile" id="front-tile">
+          <input type="file" id="front-input" accept="image/*" capture="environment">
+          <div class="cam-icon">📷</div>
+          <div class="cam-label">Front</div>
+        </div>
+        <div class="photo-tile" id="back-tile">
+          <input type="file" id="back-input" accept="image/*" capture="environment">
+          <div class="cam-icon">📷</div>
+          <div class="cam-label">Back (optional)</div>
+        </div>
+      </div>
+      <div id="photo-error" class="inline-error hidden">Front photo is required.</div>
+
+      <div class="field">
+        <label>Card Name</label>
+        <input id="f-name" placeholder="e.g. Charizard">
+        <div id="name-error" class="inline-error hidden">Name is required.</div>
+      </div>
+      <div class="field">
+        <label>Set</label>
+        <input id="f-set" placeholder="e.g. Base Set">
+      </div>
+      <div class="field">
+        <label>Card Number</label>
+        <input id="f-number" placeholder="e.g. 4/102">
+      </div>
+      <div class="field">
+        <label>Variant</label>
+        <select id="f-variant">
+          <option value="">—</option>
+          <option>Holo</option><option>Reverse Holo</option><option>Full Art</option>
+          <option>Secret Rare</option><option>1st Edition</option><option>Shadowless</option>
+          <option>Gold Star</option><option>Other</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Card Type</label>
+        <div class="segmented" id="cardtype-toggle">
+          <button type="button" data-val="Raw" class="active">Raw</button>
+          <button type="button" data-val="Graded">Graded</button>
+        </div>
+      </div>
+      <div class="field" id="raw-fields">
+        <label>Condition</label>
+        <div class="condition-chips" id="condition-chips">
+          <button type="button" class="cond-chip NM" data-val="NM">NM</button>
+          <button type="button" class="cond-chip LP" data-val="LP">LP</button>
+          <button type="button" class="cond-chip MP" data-val="MP">MP</button>
+          <button type="button" class="cond-chip HP" data-val="HP">HP</button>
+          <button type="button" class="cond-chip DMG" data-val="DMG">Damaged</button>
+        </div>
+      </div>
+      <div class="field hidden" id="graded-fields">
+        <label>Grader</label>
+        <select id="f-grader">
+          <option value="">—</option>
+          <option>PSA</option><option>BGS</option><option>CGC</option><option>TAG</option>
+          <option>AGS</option><option>ARS</option><option>PCG</option><option>SGC</option><option>Other</option>
+        </select>
+        <label style="margin-top:10px">Grade</label>
+        <input id="f-grade" placeholder="e.g. 10, 9.5, A">
+        <label style="margin-top:10px">Cert Number</label>
+        <input id="f-cert" placeholder="Optional">
+      </div>
+      <div class="field">
+        <label>Language</label>
+        <select id="f-language">
+          <option>English</option><option>Japanese</option><option>Korean</option><option>Other</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Asking Price ($)</label>
+        <input id="f-price" inputmode="numeric" placeholder="0">
+        <div id="price-error" class="inline-error hidden">Price is required.</div>
+      </div>
+      <div class="field">
+        <label>Cost / Purchase Price ($, admin only)</label>
+        <input id="f-cost" inputmode="numeric" placeholder="0">
+      </div>
+      <div class="field">
+        <label>Notes</label>
+        <input id="f-notes" placeholder="e.g. PSA 9, signed, bundle…">
+      </div>
+      <div class="form-actions">
+        <button id="save-card-btn" class="btn btn-primary btn-block">💾 Save Card</button>
+      </div>
+    </div>
+
+    <div id="view-settings" class="hidden">
+      <div class="field">
+        <label>Connection</label>
+        <div id="settings-status" style="font-size:14px;padding:12px;background:var(--panel);border-radius:10px;">—</div>
+      </div>
+      <div class="field">
+        <label>Sticky defaults</label>
+        <div id="settings-sticky" style="font-size:13px;color:var(--muted);padding:12px;background:var(--panel);border-radius:10px;">—</div>
+      </div>
+      <button id="export-csv-btn" class="btn btn-ghost btn-block" style="margin-bottom:10px;">⬇ Export Sold CSV</button>
+      <button id="logout-btn" class="btn btn-danger btn-block" style="margin-bottom:10px;">Log Out</button>
+      <div style="text-align:center;font-size:11px;color:var(--muted);margin-top:20px;">CardLog v1.0</div>
+    </div>
+  </div>
+
+  <div id="tabbar">
+    <button class="tab-btn" data-tab="add"><span class="icon">➕</span>Add</button>
+    <button class="tab-btn" data-tab="gallery"><span class="icon">📦</span>Cards</button>
+    <button class="tab-btn" data-tab="settings"><span class="icon">⚙</span>Settings</button>
+  </div>
+
+  <!-- Detail overlay -->
+  <div id="detail-overlay">
+    <div class="detail-topbar">
+      <button class="back-btn" id="detail-back">←</button>
+      <div style="font-weight:700">Card Detail</div>
+    </div>
+    <div class="detail-img-wrap" id="detail-img-wrap">
+      <img id="detail-img" src="" alt="">
+      <div class="flip-hint" id="flip-hint">Tap to flip</div>
+    </div>
+    <div class="detail-body">
+      <div class="detail-name" id="detail-name"></div>
+      <div class="detail-sub" id="detail-sub"></div>
+      <div class="detail-badges" id="detail-badges"></div>
+      <div class="detail-price" id="detail-price"></div>
+      <div class="detail-notes hidden" id="detail-notes"></div>
+      <a class="detail-link" id="detail-drive-link" href="#" target="_blank">Open original in Drive ↗</a>
+      <div class="detail-actions" id="detail-actions"></div>
+    </div>
+  </div>
+
+  <!-- Sold sheet -->
+  <div class="sheet-overlay" id="sold-sheet-overlay">
+    <div class="sheet">
+      <h3>Mark as Sold</h3>
+      <div class="field">
+        <label>Sale Price ($)</label>
+        <input id="sold-price" inputmode="numeric">
+      </div>
+      <div class="field">
+        <label>Channel</label>
+        <div class="chip-row" id="channel-chips">
+          <button type="button" class="chip" data-val="Reddit">Reddit</button>
+          <button type="button" class="chip" data-val="Facebook">Facebook</button>
+          <button type="button" class="chip" data-val="Show">Show</button>
+          <button type="button" class="chip" data-val="eBay">eBay</button>
+          <button type="button" class="chip" data-val="Other">Other</button>
+        </div>
+      </div>
+      <div class="field">
+        <label>Buyer (optional)</label>
+        <input id="sold-buyer" placeholder="Username or name">
+      </div>
+      <div class="sheet-actions">
+        <button class="btn btn-ghost btn-block" id="sold-cancel">Cancel</button>
+        <button class="btn btn-primary btn-block" id="sold-confirm">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Password gate -->
+  <div id="pw-gate">
+    <div class="pw-box">
+      <div class="cam-icon">🔒</div>
+      <h2>Admin Access</h2>
+      <div class="field"><input id="pw-input" type="password" placeholder="Password"></div>
+      <div id="pw-error" class="inline-error hidden">Wrong password.</div>
+      <button id="pw-submit" class="btn btn-primary btn-block">Unlock</button>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  // ============================================================
+  // CONFIG
+  // ============================================================
+  var API_URL = 'https://script.google.com/macros/s/AKfycbwsbrkahFE9Jq_rjWEBrH6b8iP45CiMSIwmC0Nrq3UykF_NAZ5eek0TVPNx6rl-qg4z/exec';
+
+  // ============================================================
+  // STATE
+  // ============================================================
+  var state = {
+    admin: false,
+    password: localStorage.getItem('cardlog.pw') || '',
+    cards: [],
+    statusFilter: 'For Sale',
+    search: '',
+    currentTab: 'add',
+    detailCard: null,
+    detailShowingBack: false,
+    frontBlob: null,
+    backBlob: null,
+    frontMime: 'image/jpeg',
+    backMime: 'image/jpeg',
+    cardType: 'Raw',
+    condition: 'NM',
+    inFlight: false,
+    lastSaved: null,
+    online: true
+  };
+
+  var STICKY_KEYS = ['set', 'variant', 'cardType', 'condition', 'grader', 'language'];
+
+  // ============================================================
+  // UTIL
+  // ============================================================
+  function $(id) { return document.getElementById(id); }
+  function qs(sel, root) { return (root || document).querySelector(sel); }
+  function qsa(sel, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); }
+
+  function toast(msg) {
+    var el = $('toast');
+    el.textContent = msg;
+    el.classList.add('show');
+    clearTimeout(toast._t);
+    toast._t = setTimeout(function () { el.classList.remove('show'); }, 2600);
+  }
+
+  function genId() {
+    return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  }
+
+  function money(n) {
+    n = Math.round(Number(n) || 0);
+    return '$' + n.toLocaleString();
+  }
+
+  function esc(s) {
+    var d = document.createElement('div');
+    d.textContent = s == null ? '' : String(s);
+    return d.innerHTML;
+  }
+
+  function thumbUrl(fileId) {
+    return 'https://drive.google.com/thumbnail?id=' + fileId + '&sz=w1000';
+  }
+  function fallbackUrl(fileId) {
+    return 'https://lh3.googleusercontent.com/d/' + fileId + '=w1000';
+  }
+  function driveViewUrl(fileId) {
+    return 'https://drive.google.com/file/d/' + fileId + '/view';
+  }
+
+  // ============================================================
+  // NETWORK
+  // ============================================================
+  function api(action, payload, method) {
+    payload = payload || {};
+    method = method || 'POST';
+
+    if (method === 'GET') {
+      var url = API_URL + (API_URL.indexOf('?') >= 0 ? '&' : '?') + 'action=' + encodeURIComponent(action);
+      return fetchWithTimeout(url, { method: 'GET' });
+    }
+
+    var body = Object.assign({ action: action, password: state.password }, payload);
+    return fetchWithTimeout(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(body)
+    });
+  }
+
+  function fetchWithTimeout(url, opts) {
+    var controller = new AbortController();
+    var timeoutId = setTimeout(function () { controller.abort(); }, 45000);
+    opts.signal = controller.signal;
+    return fetch(url, opts)
+      .then(function (res) { return res.json(); })
+      .finally(function () { clearTimeout(timeoutId); });
+  }
+
+  function ping() {
+    api('ping', {}, 'GET')
+      .then(function (res) {
+        state.online = !!(res && res.ok);
+        updateSyncPill();
+      })
+      .catch(function () {
+        state.online = false;
+        updateSyncPill();
+      });
+  }
+
+  function updateSyncPill() {
+    var dot = $('sync-dot');
+    var text = $('sync-text');
+    dot.className = 'dot ' + (state.online ? 'online' : 'offline');
+    text.textContent = state.online ? 'Online' : 'Offline';
+  }
+
+  // ============================================================
+  // LOAD / CACHE
+  // ============================================================
+  function loadCards() {
+    var cached = localStorage.getItem('cardlog.cache');
+    if (cached) {
+      try {
+        state.cards = JSON.parse(cached);
+        renderGallery();
+        $('cache-pill').classList.remove('hidden');
+      } catch (e) {}
+    }
+    refreshCards();
+  }
+
+  function refreshCards() {
+    var action = state.admin ? 'listAdmin' : 'list';
+    var method = state.admin ? 'POST' : 'GET';
+    api(action, {}, method)
+      .then(function (res) {
+        if (res && res.ok) {
+          state.cards = res.cards || [];
+          localStorage.setItem('cardlog.cache', JSON.stringify(state.cards));
+          $('cache-pill').classList.add('hidden');
+          state.online = true;
+          updateSyncPill();
+          renderGallery();
+        }
+      })
+      .catch(function () {
+        state.online = false;
+        updateSyncPill();
+      });
+  }
+
+  // ============================================================
+  // STICKY FIELDS
+  // ============================================================
+  function loadSticky() {
+    STICKY_KEYS.forEach(function (key) {
+      var v = localStorage.getItem('cardlog.sticky.' + key);
+      if (!v) return;
+      if (key === 'cardType') { setCardType(v); return; }
+      if (key === 'condition') { setCondition(v); return; }
+      var el = $('f-' + key);
+      if (el) el.value = v;
+    });
+  }
+
+  function saveSticky() {
+    STICKY_KEYS.forEach(function (key) {
+      var val;
+      if (key === 'cardType') val = state.cardType;
+      else if (key === 'condition') val = state.condition;
+      else { var el = $('f-' + key); val = el ? el.value : ''; }
+      if (val) localStorage.setItem('cardlog.sticky.' + key, val);
+    });
+  }
+
+  // ============================================================
+  // TABS / NAV
+  // ============================================================
+  function showTab(tab) {
+    state.currentTab = tab;
+    $('view-add').classList.toggle('hidden', tab !== 'add');
+    $('view-gallery').classList.toggle('hidden', tab !== 'gallery');
+    $('view-settings').classList.toggle('hidden', tab !== 'settings');
+    qsa('.tab-btn').forEach(function (b) {
+      b.classList.toggle('active', b.dataset.tab === tab);
+    });
+    if (tab === 'settings') renderSettings();
+    if (tab === 'gallery') renderGallery();
+  }
+
+  qsa('.tab-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () { showTab(btn.dataset.tab); });
+  });
+
+  // ============================================================
+  // ADMIN UNLOCK
+  // ============================================================
+  function enterAdminMode() {
+    state.admin = true;
+    sessionStorage.setItem('cardlog.adminSession', '1');
+    $('tabbar').classList.add('show');
+    document.body.style.paddingBottom = '';
+    refreshCards();
+    showTab('add');
+  }
+
+  function checkAdminEntry() {
+    var params = new URLSearchParams(window.location.search);
+    var wantsAdmin = params.get('admin') === '1' || sessionStorage.getItem('cardlog.adminSession') === '1';
+    if (!wantsAdmin) return;
+
+    if (state.password) {
+      // verify saved password quietly with a ping-equivalent (listAdmin with 0 rows is fine)
+      enterAdminMode();
+    } else {
+      $('pw-gate').classList.add('open');
+    }
+  }
+
+  $('pw-submit').addEventListener('click', submitPassword);
+  $('pw-input').addEventListener('keydown', function (e) { if (e.key === 'Enter') submitPassword(); });
+
+  function submitPassword() {
+    var val = $('pw-input').value;
+    if (!val) return;
+    state.password = val;
+    api('listAdmin', {})
+      .then(function (res) {
+        if (res && res.ok) {
+          localStorage.setItem('cardlog.pw', val);
+          $('pw-gate').classList.remove('open');
+          $('pw-error').classList.add('hidden');
+          enterAdminMode();
+        } else {
+          $('pw-error').classList.remove('hidden');
+          state.password = '';
+        }
+      })
+      .catch(function () {
+        $('pw-error').textContent = 'Could not reach server. Check connection.';
+        $('pw-error').classList.remove('hidden');
+      });
+  }
+
+  $('logout-btn').addEventListener('click', function () {
+    localStorage.removeItem('cardlog.pw');
+    sessionStorage.removeItem('cardlog.adminSession');
+    state.admin = false;
+    state.password = '';
+    $('tabbar').classList.remove('show');
+    var url = window.location.pathname;
+    window.location.href = url;
+  });
+
+  // ============================================================
+  // GALLERY
+  // ============================================================
+  var STATUS_FILTERS_ADMIN = ['For Sale', 'Hold', 'Sold'];
+  var STATUS_FILTERS_PUBLIC = ['For Sale', 'Sold'];
+
+  function renderStatusChips() {
+    var filters = state.admin ? STATUS_FILTERS_ADMIN : STATUS_FILTERS_PUBLIC;
+    var row = $('status-chips');
+    row.innerHTML = filters.map(function (f) {
+      var active = f === state.statusFilter ? ' active' : '';
+      return '<button type="button" class="chip' + active + '" data-status="' + esc(f) + '">' + esc(f) + '</button>';
+    }).join('');
+    qsa('.chip', row).forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        state.statusFilter = btn.dataset.status;
+        renderGallery();
+      });
+    });
+  }
+
+  $('search-input').addEventListener('input', function (e) {
+    state.search = e.target.value.toLowerCase();
+    renderGallery();
+  });
+
+  function conditionBadge(card) {
+    if (card.cardType === 'Graded') {
+      var g = (card.grader || '') + ' ' + (card.grade || '');
+      return '<span class="badge graded">' + esc(g.trim()) + '</span>';
+    }
+    if (card.condition) {
+      return '<span class="badge ' + esc(card.condition) + '">' + esc(card.condition) + '</span>';
+    }
+    return '';
+  }
+
+  function renderGallery() {
+    renderStatusChips();
+    var grid = $('grid');
+    var filtered = state.cards.filter(function (c) {
+      if (c.status !== state.statusFilter) return false;
+      if (!state.search) return true;
+      var hay = [c.name, c.set, c.number, c.notes].join(' ').toLowerCase();
+      return hay.indexOf(state.search) >= 0;
+    });
+
+    if (!filtered.length) {
+      grid.innerHTML = '';
+      $('empty-state').classList.remove('hidden');
+      return;
+    }
+    $('empty-state').classList.add('hidden');
+
+    grid.innerHTML = filtered.map(function (c) {
+      var img = c.frontId
+        ? '<img src="' + thumbUrl(c.frontId) + '" loading="lazy" onerror="this.onerror=null;this.src=\'' + fallbackUrl(c.frontId) + '\';">'
+        : '<div class="tile-placeholder">' + esc(c.name || 'Card') + '</div>';
+      var soldRibbon = c.status === 'Sold' ? '<div class="sold-ribbon">SOLD</div>' : '';
+      var soldBtn = (state.admin && c.status !== 'Sold')
+        ? '<button type="button" class="tile-sold-btn" data-id="' + esc(c.id) + '">💰 Sold</button>' : '';
+      return (
+        '<div class="card-tile" data-id="' + esc(c.id) + '">' +
+          '<div class="tile-img-wrap" data-open="' + esc(c.id) + '">' + img + soldRibbon + '</div>' +
+          '<div class="tile-body">' +
+            '<div class="tile-name" data-open="' + esc(c.id) + '">' + esc(c.name) + '</div>' +
+            '<div class="tile-sub">' + esc(c.set || '') + (c.number ? ' · ' + esc(c.number) : '') + '</div>' +
+            '<div class="tile-bottom">' +
+              '<span class="tile-price">' + money(c.price) + '</span>' + conditionBadge(c) +
+            '</div>' +
+            soldBtn +
+          '</div>' +
+        '</div>'
+      );
+    }).join('');
+
+    qsa('[data-open]', grid).forEach(function (el) {
+      el.addEventListener('click', function () { openDetail(el.dataset.open); });
+    });
+    qsa('.tile-sold-btn', grid).forEach(function (btn) {
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        openSoldSheet(btn.dataset.id);
+      });
+    });
+  }
+
+  // ============================================================
+  // DETAIL VIEW
+  // ============================================================
+  function findCard(id) {
+    for (var i = 0; i < state.cards.length; i++) {
+      if (state.cards[i].id === id) return state.cards[i];
+    }
+    return null;
+  }
+
+  function openDetail(id) {
+    var card = findCard(id);
+    if (!card) return;
+    state.detailCard = card;
+    state.detailShowingBack = false;
+    renderDetail();
+    $('detail-overlay').classList.add('open');
+  }
+
+  function renderDetail() {
+    var c = state.detailCard;
+    if (!c) return;
+    var fileId = state.detailShowingBack ? (c.backId || c.frontId) : c.frontId;
+    var img = $('detail-img');
+    img.src = fileId ? thumbUrl(fileId) : '';
+    img.onerror = function () { if (fileId) img.src = fallbackUrl(fileId); };
+    $('flip-hint').classList.toggle('hidden', !c.backId);
+
+    $('detail-name').textContent = c.name || '';
+    var subParts = [c.set, c.number, c.language && c.language !== 'English' ? c.language : ''].filter(Boolean);
+    $('detail-sub').textContent = subParts.join(' · ');
+
+    var badges = conditionBadge(c);
+    $('detail-badges').innerHTML = badges;
+
+    $('detail-price').textContent = c.status === 'Sold' ? 'Sold for ' + money(c.soldPrice) : money(c.price);
+
+    if (c.notes) {
+      $('detail-notes').textContent = c.notes;
+      $('detail-notes').classList.remove('hidden');
+    } else {
+      $('detail-notes').classList.add('hidden');
+    }
+
+    var driveLink = $('detail-drive-link');
+    if (c.frontId) {
+      driveLink.href = driveViewUrl(c.frontId);
+      driveLink.classList.remove('hidden');
+    } else {
+      driveLink.classList.add('hidden');
+    }
+
+    var actions = $('detail-actions');
+    if (state.admin) {
+      var html = '';
+      if (c.status !== 'Sold') {
+        html += '<button class="btn btn-primary" id="da-sold">💰 Sold</button>';
+        var holdLabel = c.status === 'Hold' ? '↩ For Sale' : '⏸ Hold';
+        html += '<button class="btn btn-ghost" id="da-hold">' + holdLabel + '</button>';
+      } else {
+        html += '<button class="btn btn-ghost" id="da-unsold">↩ Unsold</button>';
+      }
+      html += '<button class="btn btn-danger" id="da-delete">🗑 Delete</button>';
+      actions.innerHTML = html;
+
+      var soldBtn = $('da-sold');
+      if (soldBtn) soldBtn.addEventListener('click', function () { openSoldSheet(c.id); });
+      var holdBtn = $('da-hold');
+      if (holdBtn) holdBtn.addEventListener('click', function () { toggleHold(c); });
+      var unsoldBtn = $('da-unsold');
+      if (unsoldBtn) unsoldBtn.addEventListener('click', function () { doUnsold(c.id); });
+      $('da-delete').addEventListener('click', function () { confirmDelete(c.id); });
+    } else {
+      actions.innerHTML = '';
+    }
+  }
+
+  $('detail-img-wrap').addEventListener('click', function () {
+    if (!state.detailCard || !state.detailCard.backId) return;
+    state.detailShowingBack = !state.detailShowingBack;
+    renderDetail();
+  });
+  $('detail-back').addEventListener('click', function () {
+    $('detail-overlay').classList.remove('open');
+  });
+
+  function toggleHold(card) {
+    var newStatus = card.status === 'Hold' ? 'For Sale' : 'Hold';
+    api('setStatus', { id: card.id, status: newStatus }).then(function (res) {
+      if (res && res.ok) {
+        toast(newStatus === 'Hold' ? 'Moved to Hold' : 'Back to For Sale');
+        refreshCards();
+        $('detail-overlay').classList.remove('open');
+      } else {
+        toast('Could not update: ' + (res && res.error || 'unknown error'));
+      }
+    }).catch(function () { toast('Network error. Try again.'); });
+  }
+
+  function doUnsold(id) {
+    api('unsold', { id: id }).then(function (res) {
+      if (res && res.ok) {
+        toast('Marked Unsold');
+        refreshCards();
+        $('detail-overlay').classList.remove('open');
+      } else {
+        toast('Could not update: ' + (res && res.error || 'unknown error'));
+      }
+    }).catch(function () { toast('Network error. Try again.'); });
+  }
+
+  function confirmDelete(id) {
+    if (!window.confirm('Delete this card and its photos? This cannot be undone.')) return;
+    api('deleteCard', { id: id }).then(function (res) {
+      if (res && res.ok) {
+        toast('Card deleted');
+        refreshCards();
+        $('detail-overlay').classList.remove('open');
+      } else {
+        toast('Could not delete: ' + (res && res.error || 'unknown error'));
+      }
+    }).catch(function () { toast('Network error. Try again.'); });
+  }
+
+  // ============================================================
+  // SOLD SHEET
+  // ============================================================
+  var soldTargetId = null;
+  var soldChannel = '';
+
+  function openSoldSheet(id) {
+    var card = findCard(id);
+    if (!card) return;
+    soldTargetId = id;
+    soldChannel = '';
+    $('sold-price').value = card.price;
+    $('sold-buyer').value = '';
+    qsa('#channel-chips .chip').forEach(function (c) { c.classList.remove('active'); });
+    $('sold-sheet-overlay').classList.add('open');
+  }
+  $('sold-cancel').addEventListener('click', function () {
+    $('sold-sheet-overlay').classList.remove('open');
+  });
+  qsa('#channel-chips .chip').forEach(function (chip) {
+    chip.addEventListener('click', function () {
+      qsa('#channel-chips .chip').forEach(function (c) { c.classList.remove('active'); });
+      chip.classList.add('active');
+      soldChannel = chip.dataset.val;
+    });
+  });
+  $('sold-confirm').addEventListener('click', function () {
+    if (!soldTargetId) return;
+    var payload = {
+      id: soldTargetId,
+      soldPrice: $('sold-price').value,
+      channel: soldChannel,
+      buyer: $('sold-buyer').value
+    };
+    $('sold-confirm').disabled = true;
+    api('markSold', payload).then(function (res) {
+      $('sold-confirm').disabled = false;
+      if (res && res.ok) {
+        toast('Marked Sold ✓');
+        $('sold-sheet-overlay').classList.remove('open');
+        $('detail-overlay').classList.remove('open');
+        refreshCards();
+      } else {
+        toast('Could not mark sold: ' + (res && res.error || 'unknown error'));
+      }
+    }).catch(function () {
+      $('sold-confirm').disabled = false;
+      toast('Network error. Try again.');
+    });
+  });
+
+  // ============================================================
+  // ADD FORM — PHOTO PIPELINE
+  // ============================================================
+  function compressImage(file) {
+    return new Promise(function (resolve, reject) {
+      var useBitmap = typeof createImageBitmap === 'function';
+      var draw = function (source, width, height) {
+        var maxEdge = 1600;
+        var scale = Math.min(1, maxEdge / Math.max(width, height));
+        var w = Math.round(width * scale);
+        var h = Math.round(height * scale);
+        var canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        var ctx = canvas.getContext('2d');
+        ctx.drawImage(source, 0, 0, w, h);
+        canvas.toBlob(function (blob) {
+          if (!blob) { reject(new Error('encode failed')); return; }
+          resolve(blob);
+        }, 'image/jpeg', 0.85);
+      };
+
+      if (useBitmap) {
+        createImageBitmap(file, { imageOrientation: 'from-image' })
+          .then(function (bitmap) { draw(bitmap, bitmap.width, bitmap.height); })
+          .catch(function () { fallbackDraw(); });
+      } else {
+        fallbackDraw();
+      }
+
+      function fallbackDraw() {
+        var img = new Image();
+        var url = URL.createObjectURL(file);
+        img.onload = function () {
+          draw(img, img.naturalWidth, img.naturalHeight);
+          URL.revokeObjectURL(url);
+        };
+        img.onerror = function () {
+          URL.revokeObjectURL(url);
+          reject(new Error('could not read image'));
+        };
+        img.src = url;
+      }
+    });
+  }
+
+  function blobToBase64(blob) {
+    return new Promise(function (resolve, reject) {
+      var reader = new FileReader();
+      reader.onload = function () {
+        var result = reader.result;
+        var comma = result.indexOf(',');
+        resolve(result.substring(comma + 1));
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  function wirePhotoTile(tileId, inputId, which) {
+    var input = $(inputId);
+    var tile = $(tileId);
+    input.addEventListener('change', function (e) {
+      var file = e.target.files[0];
+      if (!file) return;
+      tile.classList.add('filled');
+      var existingImg = tile.querySelector('img');
+      if (existingImg) existingImg.remove();
+
+      compressImage(file).then(function (blob) {
+        if (which === 'front') state.frontBlob = blob; else state.backBlob = blob;
+        var url = URL.createObjectURL(blob);
+        var img = document.createElement('img');
+        img.src = url;
+        tile.insertBefore(img, tile.firstChild);
+        if (which === 'front') $('photo-error').classList.add('hidden');
+      }).catch(function () {
+        toast('Could not read that photo. Use the camera or a JPEG.');
+      });
+    });
+  }
+  wirePhotoTile('front-tile', 'front-input', 'front');
+  wirePhotoTile('back-tile', 'back-input', 'back');
+
+  // ============================================================
+  // ADD FORM — CARD TYPE / CONDITION TOGGLES
+  // ============================================================
+  function setCardType(val) {
+    state.cardType = val;
+    qsa('#cardtype-toggle button').forEach(function (b) {
+      b.classList.toggle('active', b.dataset.val === val);
+    });
+    $('raw-fields').classList.toggle('hidden', val !== 'Raw');
+    $('graded-fields').classList.toggle('hidden', val !== 'Graded');
+  }
+  qsa('#cardtype-toggle button').forEach(function (btn) {
+    btn.addEventListener('click', function () { setCardType(btn.dataset.val); });
+  });
+
+  function setCondition(val) {
+    state.condition = val;
+    qsa('.cond-chip').forEach(function (b) {
+      b.classList.toggle('active', b.dataset.val === val);
+    });
+  }
+  qsa('.cond-chip').forEach(function (btn) {
+    btn.addEventListener('click', function () { setCondition(btn.dataset.val); });
+  });
+  setCondition('NM');
+
+  // ============================================================
+  // ADD FORM — SAME AS LAST
+  // ============================================================
+  $('same-as-last-btn').addEventListener('click', function () {
+    if (!state.lastSaved) return;
+    $('f-name').value = state.lastSaved.name || '';
+    $('f-set').value = state.lastSaved.set || '';
+  });
+
+  // ============================================================
+  // ADD FORM — SAVE
+  // ============================================================
+  function clearAddForm() {
+    $('f-name').value = '';
+    $('f-number').value = '';
+    $('f-price').value = '';
+    $('f-cost').value = '';
+    $('f-notes').value = '';
+    $('f-cert').value = '';
+    $('f-grade').value = '';
+    state.frontBlob = null;
+    state.backBlob = null;
+    ['front-tile', 'back-tile'].forEach(function (id) {
+      var tile = $(id);
+      tile.classList.remove('filled');
+      var img = tile.querySelector('img');
+      if (img) img.remove();
+    });
+    $('front-input').value = '';
+    $('back-input').value = '';
+    $('photo-error').classList.add('hidden');
+    $('name-error').classList.add('hidden');
+    $('price-error').classList.add('hidden');
+  }
+
+  function validateAddForm() {
+    var ok = true;
+    if (!state.frontBlob) { $('photo-error').classList.remove('hidden'); ok = false; }
+    else { $('photo-error').classList.add('hidden'); }
+
+    if (!$('f-name').value.trim()) { $('name-error').classList.remove('hidden'); ok = false; }
+    else { $('name-error').classList.add('hidden'); }
+
+    if (!$('f-price').value) { $('price-error').classList.remove('hidden'); ok = false; }
+    else { $('price-error').classList.add('hidden'); }
+
+    if (!ok) {
+      if (!$('f-name').value.trim()) $('f-name').focus();
+      else if (!$('f-price').value) $('f-price').focus();
+    }
+    return ok;
+  }
+
+  var pendingCardId = null;
+
+  function buildCardPayload() {
+    return {
+      id: pendingCardId || genId(),
+      name: $('f-name').value.trim(),
+      set: $('f-set').value.trim(),
+      number: $('f-number').value.trim(),
+      variant: $('f-variant').value,
+      cardType: state.cardType,
+      condition: state.cardType === 'Raw' ? state.condition : '',
+      grader: state.cardType === 'Graded' ? $('f-grader').value : '',
+      grade: state.cardType === 'Graded' ? $('f-grade').value.trim() : '',
+      cert: state.cardType === 'Graded' ? $('f-cert').value.trim() : '',
+      language: $('f-language').value,
+      price: $('f-price').value,
+      cost: $('f-cost').value,
+      notes: $('f-notes').value.trim()
+    };
+  }
+
+  function showAddBanner(type, msg) {
+    var el = $('add-banner');
+    if (!msg) { el.innerHTML = ''; return; }
+    el.innerHTML = '<div class="banner' + (type === 'ok' ? ' banner-ok' : '') + '">' + esc(msg) + '</div>';
+  }
+
+  function saveCard() {
+    if (state.inFlight) return;
+    if (!validateAddForm()) return;
+
+    pendingCardId = pendingCardId || genId();
+    var card = buildCardPayload();
+    card.id = pendingCardId;
+
+    state.inFlight = true;
+    $('save-card-btn').disabled = true;
+    $('save-card-btn').textContent = 'Saving…';
+    showAddBanner();
+
+    Promise.all([
+      blobToBase64(state.frontBlob),
+      state.backBlob ? blobToBase64(state.backBlob) : Promise.resolve(null)
+    ]).then(function (results) {
+      var payload = {
+        card: card,
+        front: { mime: 'image/jpeg', b64: results[0] }
+      };
+      if (results[1]) payload.back = { mime: 'image/jpeg', b64: results[1] };
+
+      return api('addCard', payload);
+    }).then(function (res) {
+      state.inFlight = false;
+      $('save-card-btn').disabled = false;
+      $('save-card-btn').textContent = '💾 Save Card';
+
+      if (res && res.ok) {
+        state.lastSaved = { name: card.name, set: card.set };
+        $('same-as-last-row').classList.remove('hidden');
+        saveSticky();
+        toast('Saved ' + res.sku + ' ✓');
+        pendingCardId = null;
+        clearAddForm();
+        refreshCards();
+        $('front-tile').scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } else {
+        showAddBanner('err', 'Could not save: ' + (res && res.error || 'unknown error') + '. Nothing was lost — tap Save to retry.');
+      }
+    }).catch(function () {
+      state.inFlight = false;
+      $('save-card-btn').disabled = false;
+      $('save-card-btn').textContent = '💾 Save Card';
+      showAddBanner('err', 'Connection problem. Your photos and details are still here — tap Save to retry.');
+    });
+  }
+
+  $('save-card-btn').addEventListener('click', saveCard);
+
+  // ============================================================
+  // SETTINGS
+  // ============================================================
+  function renderSettings() {
+    $('settings-status').textContent = state.online
+      ? 'Online — connected to CardLog server'
+      : 'Offline — changes cannot be saved right now';
+    var sticky = STICKY_KEYS.map(function (k) {
+      var v = k === 'cardType' ? state.cardType : (k === 'condition' ? state.condition : localStorage.getItem('cardlog.sticky.' + k));
+      return v ? (k + ': ' + v) : null;
+    }).filter(Boolean).join(' · ');
+    $('settings-sticky').textContent = sticky || 'None set yet';
+  }
+
+  $('export-csv-btn').addEventListener('click', function () {
+    var soldCards = state.cards.filter(function (c) { return c.status === 'Sold'; });
+    if (!soldCards.length) { toast('No sold cards to export'); return; }
+    var cols = ['sku', 'name', 'set', 'number', 'condition', 'grader', 'grade', 'price', 'soldPrice', 'soldAt', 'channel', 'buyer'];
+    var lines = [cols.join(',')];
+    soldCards.forEach(function (c) {
+      lines.push(cols.map(function (k) {
+        var v = c[k] == null ? '' : String(c[k]);
+        if (v.indexOf(',') >= 0 || v.indexOf('"') >= 0) v = '"' + v.replace(/"/g, '""') + '"';
+        return v;
+      }).join(','));
+    });
+    var blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'cardlog-sold-' + new Date().toISOString().slice(0, 10) + '.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  });
+
+  // ============================================================
+  // INIT
+  // ============================================================
+  function init() {
+    loadSticky();
+    checkAdminEntry();
+    loadCards();
+    ping();
+    setInterval(ping, 30000);
+    window.addEventListener('online', function () { state.online = true; updateSyncPill(); refreshCards(); });
+    window.addEventListener('offline', function () { state.online = false; updateSyncPill(); });
+
+    var longPressTimer;
+    $('logo').addEventListener('touchstart', function () {
+      longPressTimer = setTimeout(function () {
+        if (!state.admin) $('pw-gate').classList.add('open');
+      }, 800);
+    });
+    $('logo').addEventListener('touchend', function () { clearTimeout(longPressTimer); });
+  }
+
+  document.addEventListener('DOMContentLoaded', init);
+})();
+</script>
+</body>
+</html>
