@@ -98,6 +98,80 @@
 
   /* ── Gallery grid ── */
   #grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  #case-count {
+    font-size: 12px; color: var(--muted); font-weight: 700;
+    margin-bottom: 10px; letter-spacing: 0.2px;
+  }
+  #reorder-bar { display: flex; justify-content: flex-end; margin-bottom: 10px; }
+
+  /* ── Reorder list (admin "Rearrange" mode) ── */
+  .reorder-row {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 10px; padding: 8px 10px; margin-bottom: 8px;
+  }
+  .reorder-thumb {
+    width: 42px; height: 58px; border-radius: 6px; overflow: hidden;
+    background: #0f0f22; flex: 0 0 auto; position: relative;
+  }
+  .reorder-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .reorder-info { flex: 1; min-width: 0; }
+  .reorder-name { font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .reorder-sub { font-size: 11px; color: var(--muted); }
+  .reorder-arrows { display: flex; flex-direction: column; gap: 4px; flex: 0 0 auto; }
+  .reorder-arrow-btn {
+    width: 34px; height: 30px; border-radius: 7px; border: 1px solid var(--border);
+    background: var(--bg); color: var(--text); font-size: 14px; font-weight: 800;
+  }
+  .reorder-arrow-btn:disabled { opacity: 0.3; }
+
+  /* ── Display-case grid (public viewer only) ── */
+  #grid.case-mode {
+    grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+    gap: 8px;
+  }
+  .case-slot {
+    position: relative;
+    border-radius: 8px;
+    overflow: hidden;
+    background: #0f0f22;
+    border: 1px solid var(--border);
+    box-shadow: inset 0 0 0 1px rgba(245, 197, 24, 0.06), 0 2px 5px rgba(0,0,0,.35);
+    aspect-ratio: 5 / 7;
+  }
+  .case-slot img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .case-slot .tile-placeholder { font-size: 10px; }
+  .case-price-tag {
+    position: absolute; bottom: 4px; right: 4px;
+    background: rgba(22, 33, 62, 0.92);
+    color: var(--accent);
+    font-size: 10px; font-weight: 800;
+    padding: 2px 6px; border-radius: 5px;
+    line-height: 1.4;
+  }
+  .case-cond-tag {
+    position: absolute; top: 4px; left: 4px;
+    font-size: 8px; font-weight: 800; padding: 2px 5px; border-radius: 4px;
+    color: #0a0a1a; letter-spacing: 0.2px;
+  }
+  .case-cond-tag.NM { background: var(--green); }
+  .case-cond-tag.LP { background: var(--blue); color: #fff; }
+  .case-cond-tag.MP { background: var(--yellow); }
+  .case-cond-tag.HP { background: var(--orange); color: #fff; }
+  .case-cond-tag.DMG { background: var(--red); color: #fff; }
+  .case-cond-tag.graded { background: var(--blue); color: #fff; }
+  .case-sold-ribbon {
+    position: absolute; inset: 0;
+    background: rgba(10,10,20,0.62);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .case-sold-ribbon span {
+    background: var(--red); color: #fff;
+    font-size: 9px; font-weight: 800; letter-spacing: 0.4px;
+    padding: 3px 10px; border-radius: 4px;
+    transform: rotate(-20deg);
+  }
+
   .card-tile {
     background: var(--panel);
     border-radius: 12px;
@@ -312,7 +386,12 @@
         <input id="search-input" placeholder="Search name, set, number, notes…">
       </div>
       <div class="chip-row" id="status-chips"></div>
+      <div id="reorder-bar" class="hidden">
+        <button type="button" id="reorder-toggle" class="btn btn-ghost">↕ Rearrange</button>
+      </div>
+      <div id="case-count"></div>
       <div id="grid"></div>
+      <div id="reorder-list" class="hidden"></div>
       <div id="empty-state" class="empty-state hidden">No cards match.</div>
     </div>
 
@@ -322,12 +401,12 @@
 
       <div class="photo-row">
         <div class="photo-tile" id="front-tile">
-          <input type="file" id="front-input" accept="image/*">
+          <input type="file" id="front-input" accept="image/*" capture="environment">
           <div class="cam-icon">📷</div>
           <div class="cam-label">Front</div>
         </div>
         <div class="photo-tile" id="back-tile">
-          <input type="file" id="back-input" accept="image/*">
+          <input type="file" id="back-input" accept="image/*" capture="environment">
           <div class="cam-icon">📷</div>
           <div class="cam-label">Back (optional)</div>
         </div>
@@ -522,7 +601,8 @@
     condition: 'NM',
     inFlight: false,
     lastSaved: null,
-    online: true
+    online: true,
+    reorderMode: false
   };
 
   var STICKY_KEYS = ['set', 'variant', 'cardType', 'condition', 'grader', 'language'];
@@ -799,7 +879,30 @@
     return '';
   }
 
+  function caseCondTag(c) {
+    if (c.cardType === 'Graded') {
+      var g = ((c.grader || '') + ' ' + (c.grade || '')).trim();
+      return g ? '<span class="case-cond-tag graded">' + esc(g) + '</span>' : '';
+    }
+    if (c.condition) {
+      return '<span class="case-cond-tag ' + esc(c.condition) + '">' + esc(c.condition) + '</span>';
+    }
+    return '';
+  }
+
   function renderGallery() {
+    $('reorder-bar').classList.toggle('hidden', !state.admin);
+
+    if (state.reorderMode) {
+      renderReorderList();
+      return;
+    }
+    $('grid').classList.remove('hidden');
+    $('search-row').classList.remove('hidden');
+    $('case-count').classList.remove('hidden');
+    $('status-chips').classList.remove('hidden');
+    $('reorder-list').classList.add('hidden');
+
     renderStatusChips();
     var grid = $('grid');
     var filtered = state.cards.filter(function (c) {
@@ -809,34 +912,60 @@
       return hay.indexOf(state.search) >= 0;
     });
 
+    var countLabel = filtered.length + (filtered.length === 1 ? ' card' : ' cards') +
+      (state.statusFilter ? ' — ' + state.statusFilter : '');
+    $('case-count').textContent = countLabel;
+
     if (!filtered.length) {
       grid.innerHTML = '';
+      grid.classList.remove('case-mode');
       $('empty-state').classList.remove('hidden');
       return;
     }
     $('empty-state').classList.add('hidden');
 
-    grid.innerHTML = filtered.map(function (c) {
-      var img = c.frontId
-        ? '<img src="' + thumbUrl(c.frontId) + '" loading="lazy" onerror="this.onerror=null;this.src=\'' + fallbackUrl(c.frontId) + '\';">'
-        : '<div class="tile-placeholder">' + esc(c.name || 'Card') + '</div>';
-      var soldRibbon = c.status === 'Sold' ? '<div class="sold-ribbon">SOLD</div>' : '';
-      var soldBtn = (state.admin && c.status !== 'Sold')
-        ? '<button type="button" class="tile-sold-btn" data-id="' + esc(c.id) + '">💰 Sold</button>' : '';
-      return (
-        '<div class="card-tile" data-id="' + esc(c.id) + '">' +
-          '<div class="tile-img-wrap" data-open="' + esc(c.id) + '">' + img + soldRibbon + '</div>' +
-          '<div class="tile-body">' +
-            '<div class="tile-name" data-open="' + esc(c.id) + '">' + esc(c.name) + '</div>' +
-            '<div class="tile-sub">' + esc(c.set || '') + (c.number ? ' · ' + esc(c.number) : '') + '</div>' +
-            '<div class="tile-bottom">' +
-              '<span class="tile-price">' + money(c.price) + '</span>' + conditionBadge(c) +
+    if (!state.admin) {
+      // ── Display-case grid: image-forward, minimal text, click to see full detail ──
+      grid.classList.add('case-mode');
+      grid.innerHTML = filtered.map(function (c) {
+        var img = c.frontId
+          ? '<img src="' + thumbUrl(c.frontId) + '" loading="lazy" onerror="this.onerror=null;this.src=\'' + fallbackUrl(c.frontId) + '\';">'
+          : '<div class="tile-placeholder">' + esc(c.name || 'Card') + '</div>';
+        var soldOverlay = c.status === 'Sold' ? '<div class="case-sold-ribbon"><span>SOLD</span></div>' : '';
+        return (
+          '<div class="case-slot" data-open="' + esc(c.id) + '">' +
+            img +
+            caseCondTag(c) +
+            '<div class="case-price-tag">' + money(c.status === 'Sold' ? c.soldPrice : c.price) + '</div>' +
+            soldOverlay +
+          '</div>'
+        );
+      }).join('');
+    } else {
+      // ── Admin grid: full detail per tile, Sold button for quick action at the table ──
+      grid.classList.remove('case-mode');
+      grid.innerHTML = filtered.map(function (c) {
+        var img = c.frontId
+          ? '<img src="' + thumbUrl(c.frontId) + '" loading="lazy" onerror="this.onerror=null;this.src=\'' + fallbackUrl(c.frontId) + '\';">'
+          : '<div class="tile-placeholder">' + esc(c.name || 'Card') + '</div>';
+        var soldRibbon = c.status === 'Sold' ? '<div class="sold-ribbon">SOLD</div>' : '';
+        var soldBtn = (c.status !== 'Sold')
+          ? '<button type="button" class="tile-sold-btn" data-id="' + esc(c.id) + '">💰 Sold</button>' : '';
+        return (
+          '<div class="card-tile" data-id="' + esc(c.id) + '">' +
+            '<div class="tile-img-wrap" data-open="' + esc(c.id) + '">' + img + soldRibbon + '</div>' +
+            '<div class="tile-body">' +
+              '<div class="tile-name" data-open="' + esc(c.id) + '">' + esc(c.name) + '</div>' +
+              '<div class="tile-sub">' + esc(c.set || '') + (c.number ? ' · ' + esc(c.number) : '') + '</div>' +
+              '<div class="tile-bottom">' +
+                '<span class="tile-price">' + money(c.price) + '</span>' + conditionBadge(c) +
+              '</div>' +
+              soldBtn +
             '</div>' +
-            soldBtn +
-          '</div>' +
-        '</div>'
-      );
-    }).join('');
+          '</div>'
+        );
+      }).join('');
+    }
 
     qsa('[data-open]', grid).forEach(function (el) {
       el.addEventListener('click', function () { openDetail(el.dataset.open); });
@@ -848,6 +977,73 @@
       });
     });
   }
+
+  // ============================================================
+  // REARRANGE MODE — one flat, all-statuses list with up/down moves.
+  // The saved order is what the public display-case grid follows.
+  // ============================================================
+  function renderReorderList() {
+    $('grid').classList.add('hidden');
+    $('search-row').classList.add('hidden');
+    $('case-count').classList.add('hidden');
+    $('status-chips').classList.add('hidden');
+    var list = $('reorder-list');
+    list.classList.remove('hidden');
+
+    if (!state.cards.length) {
+      list.innerHTML = '<div class="empty-state">No cards to arrange yet.</div>';
+      return;
+    }
+
+    list.innerHTML = state.cards.map(function (c, i) {
+      var img = c.frontId
+        ? '<img src="' + thumbUrl(c.frontId) + '" loading="lazy" onerror="this.onerror=null;this.src=\'' + fallbackUrl(c.frontId) + '\';">'
+        : '';
+      var sub = [c.set, c.status].filter(Boolean).join(' · ');
+      return (
+        '<div class="reorder-row" data-idx="' + i + '">' +
+          '<div class="reorder-thumb">' + img + '</div>' +
+          '<div class="reorder-info">' +
+            '<div class="reorder-name">' + esc(c.name || 'Untitled') + '</div>' +
+            '<div class="reorder-sub">' + esc(sub) + '</div>' +
+          '</div>' +
+          '<div class="reorder-arrows">' +
+            '<button type="button" class="reorder-arrow-btn" data-dir="up" data-idx="' + i + '"' + (i === 0 ? ' disabled' : '') + '>▲</button>' +
+            '<button type="button" class="reorder-arrow-btn" data-dir="down" data-idx="' + i + '"' + (i === state.cards.length - 1 ? ' disabled' : '') + '>▼</button>' +
+          '</div>' +
+        '</div>'
+      );
+    }).join('');
+
+    qsa('.reorder-arrow-btn', list).forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        moveCard(parseInt(btn.dataset.idx, 10), btn.dataset.dir === 'up' ? -1 : 1);
+      });
+    });
+  }
+
+  function moveCard(idx, delta) {
+    var newIdx = idx + delta;
+    if (newIdx < 0 || newIdx >= state.cards.length) return;
+    var tmp = state.cards[idx];
+    state.cards[idx] = state.cards[newIdx];
+    state.cards[newIdx] = tmp;
+    renderReorderList();
+    persistOrder();
+  }
+
+  function persistOrder() {
+    var order = state.cards.map(function (c) { return c.id; });
+    api('saveOrder', { order: order }).catch(function () {
+      toast('Could not save the new order. Check connection.');
+    });
+  }
+
+  $('reorder-toggle').addEventListener('click', function () {
+    state.reorderMode = !state.reorderMode;
+    $('reorder-toggle').textContent = state.reorderMode ? '✓ Done' : '↕ Rearrange';
+    renderGallery();
+  });
 
   // ============================================================
   // DETAIL VIEW
