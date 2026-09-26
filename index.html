@@ -125,34 +125,93 @@
   }
   .reorder-arrow-btn:disabled { opacity: 0.3; }
 
-  /* ── Display-case grid (public viewer only) ── */
+  /* ── Display case (public viewer only): the case itself, a frame around the grid ── */
+  #case-frame {
+    border-radius: 16px;
+    position: relative;
+  }
+  #case-frame.active {
+    padding: 14px 12px 20px;
+    background: linear-gradient(160deg, #2b2140 0%, #1a1430 55%, #120d22 100%);
+    border: 1px solid rgba(245, 197, 24, 0.18);
+    box-shadow:
+      0 10px 30px rgba(0,0,0,.5),
+      inset 0 1px 0 rgba(255,255,255,.06),
+      inset 0 0 0 1px rgba(0,0,0,.3);
+    overflow: hidden;
+  }
+  /* top rail: like the metal trim along the top edge of a glass case */
+  #case-frame.active::before {
+    content: '';
+    display: block;
+    height: 6px;
+    margin: -14px -12px 14px;
+    background: linear-gradient(90deg, #3a2f57, var(--accent) 45%, #3a2f57 55%, #3a2f57);
+    opacity: 0.85;
+  }
+  /* diagonal glass shine across the whole case */
+  #case-frame.active::after {
+    content: '';
+    position: absolute; inset: 0;
+    background: linear-gradient(115deg, rgba(255,255,255,.05) 0%, rgba(255,255,255,0) 22%, rgba(255,255,255,0) 78%, rgba(255,255,255,.04) 100%);
+    pointer-events: none;
+  }
   #grid.case-mode {
     grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
-    gap: 8px;
+    gap: 10px;
+    position: relative;
+    z-index: 1;
   }
   .case-slot {
     position: relative;
-    border-radius: 8px;
+    border-radius: 6px;
     overflow: hidden;
-    background: #0f0f22;
-    border: 1px solid var(--border);
-    box-shadow: inset 0 0 0 1px rgba(245, 197, 24, 0.06), 0 2px 5px rgba(0,0,0,.35);
+    background:
+      radial-gradient(ellipse at 50% 20%, rgba(255,255,255,.05), transparent 60%),
+      #1c1330;
+    border: 1px solid rgba(245, 197, 24, 0.14);
+    box-shadow:
+      inset 0 0 0 1px rgba(0,0,0,.4),
+      inset 0 -6px 8px -4px rgba(0,0,0,.6),
+      0 3px 6px rgba(0,0,0,.4);
     aspect-ratio: 5 / 7;
   }
-  .case-slot img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .case-slot img {
+    width: 100%; height: 100%; object-fit: cover; display: block;
+    position: relative; z-index: 1;
+  }
   .case-slot .tile-placeholder { font-size: 10px; }
+  /* shelf ledge: a thin lit strip beneath each card, like it's resting on a little shelf */
+  .case-slot::after {
+    content: '';
+    position: absolute; left: 4%; right: 4%; bottom: 0;
+    height: 3px;
+    background: linear-gradient(90deg, transparent, rgba(245,197,24,.35), transparent);
+    z-index: 2;
+  }
+  .case-slot.empty {
+    background: repeating-linear-gradient(
+      135deg, rgba(255,255,255,.02), rgba(255,255,255,.02) 6px,
+      transparent 6px, transparent 12px
+    ), #150e26;
+    border: 1px dashed rgba(245, 197, 24, 0.12);
+    box-shadow: inset 0 0 0 1px rgba(0,0,0,.3);
+  }
+  .case-slot.empty::after { display: none; }
   .case-price-tag {
-    position: absolute; bottom: 4px; right: 4px;
+    position: absolute; bottom: 6px; right: 4px;
     background: rgba(22, 33, 62, 0.92);
     color: var(--accent);
     font-size: 10px; font-weight: 800;
     padding: 2px 6px; border-radius: 5px;
     line-height: 1.4;
+    z-index: 3;
   }
   .case-cond-tag {
     position: absolute; top: 4px; left: 4px;
     font-size: 8px; font-weight: 800; padding: 2px 5px; border-radius: 4px;
     color: #0a0a1a; letter-spacing: 0.2px;
+    z-index: 3;
   }
   .case-cond-tag.NM { background: var(--green); }
   .case-cond-tag.LP { background: var(--blue); color: #fff; }
@@ -164,6 +223,7 @@
     position: absolute; inset: 0;
     background: rgba(10,10,20,0.62);
     display: flex; align-items: center; justify-content: center;
+    z-index: 3;
   }
   .case-sold-ribbon span {
     background: var(--red); color: #fff;
@@ -375,7 +435,8 @@
     <div id="logo">Card<span>Log</span></div>
     <div style="display:flex;align-items:center;gap:12px;">
       <button id="admin-btn" aria-label="Admin" style="background:none;border:none;color:var(--muted);font-size:18px;padding:4px;line-height:1;">🔒</button>
-      <div id="sync-pill"><span class="dot" id="sync-dot"></span><span id="sync-text">—</span></div>
+      <div id="sync-pill"><span class="dot" id="sync-dot"></span><span id="sync-text">-</span></div>
+      <button id="refresh-btn" aria-label="Refresh" style="background:none;border:none;color:var(--muted);font-size:16px;padding:4px;line-height:1;margin-left:6px;">⟳</button>
     </div>
   </div>
 
@@ -390,7 +451,9 @@
         <button type="button" id="reorder-toggle" class="btn btn-ghost">↕ Rearrange</button>
       </div>
       <div id="case-count"></div>
-      <div id="grid"></div>
+      <div id="case-frame">
+        <div id="grid"></div>
+      </div>
       <div id="reorder-list" class="hidden"></div>
       <div id="empty-state" class="empty-state hidden">No cards match.</div>
     </div>
@@ -401,12 +464,12 @@
 
       <div class="photo-row">
         <div class="photo-tile" id="front-tile">
-          <input type="file" id="front-input" accept="image/*" capture="environment">
+          <input type="file" id="front-input" accept="image/*">
           <div class="cam-icon">📷</div>
           <div class="cam-label">Front</div>
         </div>
         <div class="photo-tile" id="back-tile">
-          <input type="file" id="back-input" accept="image/*" capture="environment">
+          <input type="file" id="back-input" accept="image/*">
           <div class="cam-icon">📷</div>
           <div class="cam-label">Back (optional)</div>
         </div>
@@ -429,7 +492,7 @@
       <div class="field">
         <label>Variant</label>
         <select id="f-variant">
-          <option value="">—</option>
+          <option value="">-</option>
           <option>Holo</option><option>Reverse Holo</option><option>Full Art</option>
           <option>Secret Rare</option><option>1st Edition</option><option>Shadowless</option>
           <option>Gold Star</option><option>Other</option>
@@ -455,7 +518,7 @@
       <div class="field hidden" id="graded-fields">
         <label>Grader</label>
         <select id="f-grader">
-          <option value="">—</option>
+          <option value="">-</option>
           <option>PSA</option><option>BGS</option><option>CGC</option><option>TAG</option>
           <option>AGS</option><option>ARS</option><option>PCG</option><option>SGC</option><option>Other</option>
         </select>
@@ -491,11 +554,11 @@
     <div id="view-settings" class="hidden">
       <div class="field">
         <label>Connection</label>
-        <div id="settings-status" style="font-size:14px;padding:12px;background:var(--panel);border-radius:10px;">—</div>
+        <div id="settings-status" style="font-size:14px;padding:12px;background:var(--panel);border-radius:10px;">-</div>
       </div>
       <div class="field">
         <label>Sticky defaults</label>
-        <div id="settings-sticky" style="font-size:13px;color:var(--muted);padding:12px;background:var(--panel);border-radius:10px;">—</div>
+        <div id="settings-sticky" style="font-size:13px;color:var(--muted);padding:12px;background:var(--panel);border-radius:10px;">-</div>
       </div>
       <button id="export-csv-btn" class="btn btn-ghost btn-block" style="margin-bottom:10px;">⬇ Export Sold CSV</button>
       <button id="logout-btn" class="btn btn-danger btn-block" style="margin-bottom:10px;">Log Out</button>
@@ -645,6 +708,30 @@
   }
   function driveViewUrl(fileId) {
     return 'https://drive.google.com/file/d/' + fileId + '/view';
+  }
+
+  // eBay sold comps for a card: Sold + Completed listings only, in the
+  // Pokemon Individual Cards category, most recently ended first.
+  // Graded cards search the exact slab (grader + grade); raw cards exclude
+  // graded listings so slab prices do not skew the comps.
+  function ebaySoldUrl(c) {
+    var parts = [c.name, c.number];
+    if (c.set) parts.push(c.set);
+    if (c.variant && /1st Edition|Shadowless|Reverse Holo|Gold Star/i.test(c.variant)) parts.push(c.variant);
+    if (c.language && c.language !== 'English') parts.push(c.language);
+    if (c.cardType === 'Graded') {
+      if (c.grader) parts.push(c.grader);
+      if (c.grade) parts.push(c.grade);
+    }
+    var query = parts.filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+    if (c.cardType !== 'Graded') query += ' -PSA -BGS -CGC -TAG -SGC -graded -slab';
+    return 'https://www.ebay.com/sch/i.html' +
+      '?_nkw=' + encodeURIComponent(query) +
+      '&_sacat=183454' +
+      '&LH_Sold=1' +
+      '&LH_Complete=1' +
+      '&_sop=13' +
+      '&rt=nc';
   }
 
   // ============================================================
@@ -897,7 +984,7 @@
       renderReorderList();
       return;
     }
-    $('grid').classList.remove('hidden');
+    $('case-frame').classList.remove('hidden');
     $('search-row').classList.remove('hidden');
     $('case-count').classList.remove('hidden');
     $('status-chips').classList.remove('hidden');
@@ -905,6 +992,7 @@
 
     renderStatusChips();
     var grid = $('grid');
+    var caseFrame = $('case-frame');
     var filtered = state.cards.filter(function (c) {
       if (c.status !== state.statusFilter) return false;
       if (!state.search) return true;
@@ -913,21 +1001,18 @@
     });
 
     var countLabel = filtered.length + (filtered.length === 1 ? ' card' : ' cards') +
-      (state.statusFilter ? ' — ' + state.statusFilter : '');
+      (state.statusFilter ? ' · ' + state.statusFilter : '');
     $('case-count').textContent = countLabel;
 
-    if (!filtered.length) {
-      grid.innerHTML = '';
-      grid.classList.remove('case-mode');
-      $('empty-state').classList.remove('hidden');
-      return;
-    }
-    $('empty-state').classList.add('hidden');
-
     if (!state.admin) {
-      // ── Display-case grid: image-forward, minimal text, click to see full detail ──
+      // ── Display case: cards sit in slots inside a physical-looking case, filling it as
+      // inventory grows. A handful of empty slots always show at the end so it reads as
+      // a case with room left, not just a photo grid. ──
+      caseFrame.classList.add('active');
       grid.classList.add('case-mode');
-      grid.innerHTML = filtered.map(function (c) {
+      $('empty-state').classList.add('hidden');
+
+      var realSlots = filtered.map(function (c) {
         var img = c.frontId
           ? '<img src="' + thumbUrl(c.frontId) + '" loading="lazy" onerror="this.onerror=null;this.src=\'' + fallbackUrl(c.frontId) + '\';">'
           : '<div class="tile-placeholder">' + esc(c.name || 'Card') + '</div>';
@@ -940,10 +1025,28 @@
             soldOverlay +
           '</div>'
         );
-      }).join('');
+      });
+
+      // empty case entirely: show a full case of open slots rather than blank text
+      var ghostCount = filtered.length === 0 ? 12 : 6;
+      var ghostSlots = [];
+      for (var g = 0; g < ghostCount; g++) {
+        ghostSlots.push('<div class="case-slot empty"></div>');
+      }
+
+      grid.innerHTML = realSlots.join('') + ghostSlots.join('');
     } else {
       // ── Admin grid: full detail per tile, Sold button for quick action at the table ──
+      caseFrame.classList.remove('active');
       grid.classList.remove('case-mode');
+
+      if (!filtered.length) {
+        grid.innerHTML = '';
+        $('empty-state').classList.remove('hidden');
+        return;
+      }
+      $('empty-state').classList.add('hidden');
+
       grid.innerHTML = filtered.map(function (c) {
         var img = c.frontId
           ? '<img src="' + thumbUrl(c.frontId) + '" loading="lazy" onerror="this.onerror=null;this.src=\'' + fallbackUrl(c.frontId) + '\';">'
@@ -979,11 +1082,11 @@
   }
 
   // ============================================================
-  // REARRANGE MODE — one flat, all-statuses list with up/down moves.
+  // REARRANGE MODE: one flat, all-statuses list with up/down moves.
   // The saved order is what the public display-case grid follows.
   // ============================================================
   function renderReorderList() {
-    $('grid').classList.add('hidden');
+    $('case-frame').classList.add('hidden');
     $('search-row').classList.add('hidden');
     $('case-count').classList.add('hidden');
     $('status-chips').classList.add('hidden');
@@ -1090,7 +1193,7 @@
     }
 
     var driveLink = $('detail-drive-link');
-    if (c.frontId) {
+    if (state.admin && c.frontId) {
       driveLink.href = driveViewUrl(c.frontId);
       driveLink.classList.remove('hidden');
     } else {
@@ -1107,6 +1210,7 @@
       } else {
         html += '<button class="btn btn-ghost" id="da-unsold">↩ Unsold</button>';
       }
+      html += '<a class="btn btn-ghost" id="da-ebay" href="' + esc(ebaySoldUrl(c)) + '" target="_blank" rel="noopener" style="text-decoration:none;display:inline-block;">🔎 eBay Sold</a>';
       html += '<button class="btn btn-danger" id="da-delete">🗑 Delete</button>';
       actions.innerHTML = html;
 
@@ -1221,7 +1325,7 @@
   });
 
   // ============================================================
-  // ADD FORM — PHOTO PIPELINE
+  // ADD FORM: PHOTO PIPELINE
   // ============================================================
   function compressImage(file) {
     return new Promise(function (resolve, reject) {
@@ -1305,7 +1409,7 @@
   wirePhotoTile('back-tile', 'back-input', 'back');
 
   // ============================================================
-  // ADD FORM — CARD TYPE / CONDITION TOGGLES
+  // ADD FORM: CARD TYPE / CONDITION TOGGLES
   // ============================================================
   function setCardType(val) {
     state.cardType = val;
@@ -1331,7 +1435,7 @@
   setCondition('NM');
 
   // ============================================================
-  // ADD FORM — SAME AS LAST
+  // ADD FORM: SAME AS LAST
   // ============================================================
   $('same-as-last-btn').addEventListener('click', function () {
     if (!state.lastSaved) return;
@@ -1340,7 +1444,7 @@
   });
 
   // ============================================================
-  // ADD FORM — SAVE
+  // ADD FORM: SAVE
   // ============================================================
   function clearAddForm() {
     $('f-name').value = '';
@@ -1449,13 +1553,13 @@
         refreshCards();
         $('front-tile').scrollIntoView({ behavior: 'smooth', block: 'center' });
       } else {
-        showAddBanner('err', 'Could not save: ' + (res && res.error || 'unknown error') + '. Nothing was lost — tap Save to retry.');
+        showAddBanner('err', 'Could not save: ' + (res && res.error || 'unknown error') + '. Nothing was lost. Tap Save to retry.');
       }
     }).catch(function () {
       state.inFlight = false;
       $('save-card-btn').disabled = false;
       $('save-card-btn').textContent = '💾 Save Card';
-      showAddBanner('err', 'Connection problem. Your photos and details are still here — tap Save to retry.');
+      showAddBanner('err', 'Connection problem. Your photos and details are still here. Tap Save to retry.');
     });
   }
 
@@ -1466,8 +1570,8 @@
   // ============================================================
   function renderSettings() {
     $('settings-status').textContent = state.online
-      ? 'Online — connected to CardLog server'
-      : 'Offline — changes cannot be saved right now';
+      ? 'Online: connected to CardLog server'
+      : 'Offline: changes cannot be saved right now';
     var sticky = STICKY_KEYS.map(function (k) {
       var v = k === 'cardType' ? state.cardType : (k === 'condition' ? state.condition : localStorage.getItem('cardlog.sticky.' + k));
       return v ? (k + ': ' + v) : null;
@@ -1507,6 +1611,12 @@
     loadCards();
     ping();
     setInterval(ping, 30000);
+    $('refresh-btn').addEventListener('click', function () {
+      $('refresh-btn').style.opacity = '0.4';
+      refreshCards();
+      ping();
+      setTimeout(function () { $('refresh-btn').style.opacity = '1'; }, 500);
+    });
     window.addEventListener('online', function () { state.online = true; updateSyncPill(); refreshCards(); });
     window.addEventListener('offline', function () { state.online = false; updateSyncPill(); });
 
