@@ -314,6 +314,8 @@
   .detail-notes { font-size: 14px; color: var(--text); background: var(--panel); border-radius: 10px; padding: 12px; margin-bottom: 14px; }
   .detail-link { color: var(--accent); font-size: 13px; text-decoration: none; display: inline-block; margin-bottom: 14px; }
   .detail-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .comps-label { font-size: 11px; color: var(--muted); font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase; margin-bottom: 8px; }
+  .comp-btn { text-decoration: none; display: inline-block; }
 
   /* ── Buttons ── */
   .btn {
@@ -459,6 +461,10 @@
     </div>
 
     <div id="view-add" class="hidden">
+      <div id="edit-banner" class="banner banner-ok hidden" style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+        <span id="edit-banner-text">Editing</span>
+        <button type="button" id="cancel-edit-btn" class="btn btn-ghost" style="padding:8px 12px;">Cancel</button>
+      </div>
       <div id="add-banner"></div>
       <div id="same-as-last-row" class="same-as-last hidden"><button id="same-as-last-btn" class="btn btn-ghost btn-block">Same as last card</button></div>
 
@@ -589,6 +595,8 @@
       <div class="detail-price" id="detail-price"></div>
       <div class="detail-notes hidden" id="detail-notes"></div>
       <a class="detail-link" id="detail-drive-link" href="#" target="_blank">Open original in Drive ↗</a>
+      <div class="comps-label">Price check</div>
+      <div class="detail-actions" id="detail-comps" style="margin-bottom:14px;"></div>
       <div class="detail-actions" id="detail-actions"></div>
     </div>
   </div>
@@ -665,7 +673,8 @@
     inFlight: false,
     lastSaved: null,
     online: true,
-    reorderMode: false
+    reorderMode: false,
+    editingId: null
   };
 
   var STICKY_KEYS = ['set', 'variant', 'cardType', 'condition', 'grader', 'language'];
@@ -714,6 +723,28 @@
   // Pokemon Individual Cards category, most recently ended first.
   // Graded cards search the exact slab (grader + grade); raw cards exclude
   // graded listings so slab prices do not skew the comps.
+  function compLink(label, url) {
+    return '<a class="btn btn-ghost comp-btn" href="' + esc(url) + '" target="_blank" rel="noopener">🔎 ' + esc(label) + '</a>';
+  }
+
+  // TCGplayer: raw singles only. Name + card number matches TCGplayer's
+  // catalog more reliably than set names, which it formats its own way.
+  function tcgplayerUrl(c) {
+    var q = [c.name, c.number].filter(Boolean).join(' ').trim();
+    return 'https://www.tcgplayer.com/search/pokemon/product' +
+      '?productLineName=pokemon' +
+      '&q=' + encodeURIComponent(q) +
+      '&view=grid';
+  }
+
+  // Card Ladder: slabs only. Sales History search, newest sales first.
+  function cardLadderUrl(c) {
+    var q = [c.name, c.number, c.set, c.grader, c.grade].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+    return 'https://app.cardladder.com/sales-history' +
+      '?q=' + encodeURIComponent(q) +
+      '&sort=date&direction=desc';
+  }
+
   function ebaySoldUrl(c) {
     var parts = [c.name, c.number];
     if (c.set) parts.push(c.set);
@@ -845,6 +876,7 @@
   // TABS / NAV
   // ============================================================
   function showTab(tab) {
+    if (tab !== 'add' && state.editingId && typeof exitEdit === 'function') exitEdit();
     state.currentTab = tab;
     $('view-add').classList.toggle('hidden', tab !== 'add');
     $('view-gallery').classList.toggle('hidden', tab !== 'gallery');
@@ -1200,6 +1232,11 @@
       driveLink.classList.add('hidden');
     }
 
+    var comps = [compLink('eBay Sold', ebaySoldUrl(c))];
+    if (c.cardType === 'Graded') comps.push(compLink('Card Ladder', cardLadderUrl(c)));
+    else comps.push(compLink('TCGplayer', tcgplayerUrl(c)));
+    $('detail-comps').innerHTML = comps.join('');
+
     var actions = $('detail-actions');
     if (state.admin) {
       var html = '';
@@ -1210,9 +1247,10 @@
       } else {
         html += '<button class="btn btn-ghost" id="da-unsold">↩ Unsold</button>';
       }
-      html += '<a class="btn btn-ghost" id="da-ebay" href="' + esc(ebaySoldUrl(c)) + '" target="_blank" rel="noopener" style="text-decoration:none;display:inline-block;">🔎 eBay Sold</a>';
+      html += '<button class="btn btn-ghost" id="da-edit">✏️ Edit</button>';
       html += '<button class="btn btn-danger" id="da-delete">🗑 Delete</button>';
       actions.innerHTML = html;
+      $('da-edit').addEventListener('click', function () { startEdit(c); });
 
       var soldBtn = $('da-sold');
       if (soldBtn) soldBtn.addEventListener('click', function () { openSoldSheet(c.id); });
@@ -1471,7 +1509,7 @@
 
   function validateAddForm() {
     var ok = true;
-    if (!state.frontBlob) { $('photo-error').classList.remove('hidden'); ok = false; }
+    if (!state.frontBlob && !state.editingId) { $('photo-error').classList.remove('hidden'); ok = false; }
     else { $('photo-error').classList.add('hidden'); }
 
     if (!$('f-name').value.trim()) { $('name-error').classList.remove('hidden'); ok = false; }
@@ -1514,9 +1552,111 @@
     el.innerHTML = '<div class="banner' + (type === 'ok' ? ' banner-ok' : '') + '">' + esc(msg) + '</div>';
   }
 
+  // ============================================================
+  // EDIT MODE: reuses the Add form, prefilled, and saves via updateCard.
+  // Photos are optional on edit; retake one only to replace it.
+  // ============================================================
+  function showTilePreview(tileId, fileId) {
+    var tile = $(tileId);
+    var old = tile.querySelector('img');
+    if (old) old.remove();
+    tile.classList.remove('filled');
+    if (!fileId) return;
+    var img = document.createElement('img');
+    img.src = thumbUrl(fileId);
+    img.onerror = function () { img.onerror = null; img.src = fallbackUrl(fileId); };
+    tile.insertBefore(img, tile.firstChild);
+    tile.classList.add('filled');
+  }
+
+  function startEdit(c) {
+    $('detail-overlay').classList.remove('open');
+    showTab('add');
+    clearAddForm();
+    state.editingId = c.id;
+
+    $('f-name').value = c.name || '';
+    $('f-set').value = c.set || '';
+    $('f-number').value = c.number || '';
+    $('f-variant').value = c.variant || '';
+    setCardType(c.cardType === 'Graded' ? 'Graded' : 'Raw');
+    setCondition(c.condition || 'NM');
+    $('f-grader').value = c.grader || '';
+    $('f-grade').value = c.grade || '';
+    $('f-cert').value = c.cert || '';
+    $('f-language').value = c.language || 'English';
+    $('f-price').value = (c.price === '' || c.price == null) ? '' : c.price;
+    $('f-cost').value = (c.cost === '' || c.cost == null) ? '' : c.cost;
+    $('f-notes').value = c.notes || '';
+
+    showTilePreview('front-tile', c.frontId);
+    showTilePreview('back-tile', c.backId);
+
+    $('edit-banner-text').textContent = 'Editing ' + (c.sku || '') + ' ' + (c.name || '');
+    $('edit-banner').classList.remove('hidden');
+    $('same-as-last-row').classList.add('hidden');
+    $('save-card-btn').textContent = '💾 Update Card';
+    showAddBanner();
+    window.scrollTo(0, 0);
+    $('main').scrollTop = 0;
+  }
+
+  function exitEdit() {
+    state.editingId = null;
+    clearAddForm();
+    loadSticky();
+    $('edit-banner').classList.add('hidden');
+    $('save-card-btn').textContent = '💾 Save Card';
+    if (state.lastSaved) $('same-as-last-row').classList.remove('hidden');
+    showAddBanner();
+  }
+
+  $('cancel-edit-btn').addEventListener('click', function () {
+    exitEdit();
+    showTab('gallery');
+  });
+
+  function updateCard() {
+    var fields = buildCardPayload();
+    delete fields.id;
+
+    state.inFlight = true;
+    $('save-card-btn').disabled = true;
+    $('save-card-btn').textContent = 'Updating…';
+    showAddBanner();
+
+    Promise.all([
+      state.frontBlob ? blobToBase64(state.frontBlob) : Promise.resolve(null),
+      state.backBlob ? blobToBase64(state.backBlob) : Promise.resolve(null)
+    ]).then(function (results) {
+      var payload = { id: state.editingId, card: fields };
+      if (results[0]) payload.front = { mime: 'image/jpeg', b64: results[0] };
+      if (results[1]) payload.back = { mime: 'image/jpeg', b64: results[1] };
+      return api('updateCard', payload);
+    }).then(function (res) {
+      state.inFlight = false;
+      $('save-card-btn').disabled = false;
+      if (res && res.ok) {
+        toast('Updated ' + ((res.card && res.card.sku) || '') + ' ✓');
+        exitEdit();
+        refreshCards();
+        showTab('gallery');
+      } else {
+        $('save-card-btn').textContent = '💾 Update Card';
+        showAddBanner('err', 'Could not update: ' + (res && res.error || 'unknown error') + '. Nothing was lost. Tap Update to retry.');
+      }
+    }).catch(function () {
+      state.inFlight = false;
+      $('save-card-btn').disabled = false;
+      $('save-card-btn').textContent = '💾 Update Card';
+      showAddBanner('err', 'Connection problem. Your changes are still here. Tap Update to retry.');
+    });
+  }
+
   function saveCard() {
     if (state.inFlight) return;
     if (!validateAddForm()) return;
+    if (state.editingId) { updateCard(); return; }
 
     pendingCardId = pendingCardId || genId();
     var card = buildCardPayload();
