@@ -1,0 +1,54 @@
+[
+ {
+  "encoder": "dinov2-small",
+  "mode": "full",
+  "photos": 80,
+  "group_top1": 0.8625,
+  "group_top5": 0.9125,
+  "exact_top1": 0.725,
+  "median_ms": 204.18865000033293,
+  "p95_ms": 212.77285999972264,
+  "model_mb_fp16": 44.113152,
+  "top1_sim_hits_median": 0.9342135787010193,
+  "top1_sim_misses_median": 0.6138666868209839
+ },
+ {
+  "encoder": "dinov2-small",
+  "mode": "art",
+  "photos": 80,
+  "group_top1": 0.9125,
+  "group_top5": 0.9375,
+  "exact_top1": 0.675,
+  "median_ms": 198.75190000016119,
+  "p95_ms": 210.40582000014183,
+  "model_mb_fp16": 44.113152,
+  "top1_sim_hits_median": 0.9118887782096863,
+  "top1_sim_misses_median": 0.49441254138946533
+ },
+ {
+  "encoder": "MobileCLIP2-S0/dfndr2b",
+  "mode": "full",
+  "photos": 80,
+  "group_top1": 0.875,
+  "group_top5": 0.9375,
+  "exact_top1": 0.7375,
+  "median_ms": 195.56775000023663,
+  "p95_ms": 210.9121999996205,
+  "model_mb_fp16": 22.813952,
+  "top1_sim_hits_median": 0.9611442387104034,
+  "top1_sim_misses_median": 0.6941579878330231
+ },
+ {
+  "encoder": "MobileCLIP2-S0/dfndr2b",
+  "mode": "art",
+  "photos": 80,
+  "group_top1": 0.8125,
+  "group_top5": 0.8625,
+  "exact_top1": 0.675,
+  "median_ms": 186.9458000001032,
+  "p95_ms": 198.2227549998015,
+  "model_mb_fp16": 22.813952,
+  "top1_sim_hits_median": 0.9351375102996826,
+  "top1_sim_misses_median": 0.6005829572677612
+ }
+]

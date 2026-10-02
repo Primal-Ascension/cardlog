@@ -1,0 +1,12 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Phase 1 POC: owner photos stay local (slab photos show cert numbers; the repo is public)
+poc/photos/*
+!poc/photos/.gitkeep
+poc/results/**/warped/
+
+# Build cache normally lives in %LOCALAPPDATA%\cardlog-cache; ignore it if redirected here
+cardlog-cache/

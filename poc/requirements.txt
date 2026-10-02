@@ -1,0 +1,8 @@
+requests>=2.31
+numpy>=1.26
+pillow>=10.3
+pillow-heif>=0.16
+opencv-python-headless>=4.9
+torch>=2.3
+transformers>=4.44
+open_clip_torch>=2.26
