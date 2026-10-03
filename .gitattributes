@@ -1,0 +1,2 @@
+# Scanner data is checksummed in scanner/manifest.json; never convert line endings.
+scanner/** -text
