@@ -50,7 +50,21 @@ MIN_AREA_FRAC = 0.03     # card must fill at least 3% of the frame (slabs shrink
 MIN_EDGE_SUPPORT = 0.70  # share of the quad's perimeter that must lie on real edges
 
 
-def _edge_maps(gray):
+def _yellow_mask(rgb):
+    """The yellow border every English card had until 2023. Through sleeves and
+    slab plastic it survives far better than edges do."""
+    hsv = cv2.cvtColor(rgb, cv2.COLOR_RGB2HSV)
+    mask = cv2.inRange(hsv, (19, 70, 110), (38, 255, 255))  # hue 19+ excludes orange slab labels
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((7, 7), np.uint8), iterations=2)
+    # Fill the ring so the card becomes one solid blob whose outline is the card edge.
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    filled = np.zeros_like(mask)
+    cv2.drawContours(filled, contours, -1, 255, -1)
+    return filled
+
+
+def _edge_maps(rgb, gray):
+    yield _yellow_mask(rgb)
     blur = cv2.GaussianBlur(gray, (5, 5), 0)
     canny = cv2.Canny(blur, 40, 140)
     yield cv2.morphologyEx(canny, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8), iterations=2)
@@ -93,7 +107,9 @@ def find_card_quad(rgb_np):
     """Largest card-proportioned quad backed by real edges, in original pixel coords.
 
     Requiring the 63:88 aspect is what keeps a slab or top-loader outline
-    from winning over the card inside it.
+    from winning over the card inside it. Requiring portrait orientation keeps
+    the art window out: turned sideways it has almost exactly card proportions
+    (52 x 38 mm, 0.72). The phone is held upright, so a real card is tall.
     """
     h, w = rgb_np.shape[:2]
     scale = 1000.0 / max(h, w) if max(h, w) > 1000 else 1.0
@@ -102,7 +118,9 @@ def find_card_quad(rgb_np):
     min_area = MIN_AREA_FRAC * gray.shape[0] * gray.shape[1]
 
     best, best_area = None, 0
-    for edges in _edge_maps(gray):
+    for edges in _edge_maps(small, gray):
+        if not edges.any():
+            continue
         support_map = cv2.dilate(edges, np.ones((5, 5), np.uint8))
         contours, _ = cv2.findContours(edges, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
         for c in contours:
@@ -113,7 +131,7 @@ def find_card_quad(rgb_np):
                 continue
             area = cv2.contourArea(quad)
             qw, qh = _quad_aspect(quad)
-            if area <= best_area or abs(min(qw, qh) / max(qw, qh) - CARD_ASPECT) > ASPECT_TOL:
+            if area <= best_area or qw > qh or abs(qw / qh - CARD_ASPECT) > ASPECT_TOL:
                 continue
             if _edge_support(support_map, quad) >= MIN_EDGE_SUPPORT:
                 best, best_area = quad, area

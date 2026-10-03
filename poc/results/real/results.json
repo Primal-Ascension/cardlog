@@ -1,0 +1,78 @@
+[
+ {
+  "photos": 41,
+  "group_top1": 0.7804878048780488,
+  "group_top5": 0.8780487804878049,
+  "exact_top1": 0.5365853658536586,
+  "encoder": "dinov2-small",
+  "mode": "full",
+  "core": {
+   "photos": 29,
+   "group_top1": 0.7586206896551724,
+   "group_top5": 0.8620689655172413,
+   "exact_top1": 0.4827586206896552
+  },
+  "median_ms": 223.32070000993554,
+  "p95_ms": 268.9754999883007,
+  "model_mb_fp16": 44.113152,
+  "top1_sim_hits_median": 0.7785611152648926,
+  "top1_sim_misses_median": 0.5726631283760071
+ },
+ {
+  "photos": 41,
+  "group_top1": 0.8780487804878049,
+  "group_top5": 0.975609756097561,
+  "exact_top1": 0.6097560975609756,
+  "encoder": "dinov2-small",
+  "mode": "art",
+  "core": {
+   "photos": 29,
+   "group_top1": 0.9310344827586207,
+   "group_top5": 0.9655172413793104,
+   "exact_top1": 0.5862068965517241
+  },
+  "median_ms": 213.72750001319218,
+  "p95_ms": 262.4403999943752,
+  "model_mb_fp16": 44.113152,
+  "top1_sim_hits_median": 0.8469506502151489,
+  "top1_sim_misses_median": 0.4286945164203644
+ },
+ {
+  "photos": 41,
+  "group_top1": 0.8536585365853658,
+  "group_top5": 0.9512195121951219,
+  "exact_top1": 0.4878048780487805,
+  "encoder": "MobileCLIP2-S0/dfndr2b",
+  "mode": "full",
+  "core": {
+   "photos": 29,
+   "group_top1": 0.9310344827586207,
+   "group_top5": 0.9655172413793104,
+   "exact_top1": 0.5172413793103449
+  },
+  "median_ms": 210.75319999363273,
+  "p95_ms": 266.9935999874724,
+  "model_mb_fp16": 22.813952,
+  "top1_sim_hits_median": 0.9244970083236694,
+  "top1_sim_misses_median": 0.798889696598053
+ },
+ {
+  "photos": 41,
+  "group_top1": 0.8048780487804879,
+  "group_top5": 0.8780487804878049,
+  "exact_top1": 0.5121951219512195,
+  "encoder": "MobileCLIP2-S0/dfndr2b",
+  "mode": "art",
+  "core": {
+   "photos": 29,
+   "group_top1": 0.8620689655172413,
+   "group_top5": 0.896551724137931,
+   "exact_top1": 0.4827586206896552
+  },
+  "median_ms": 211.3384000113001,
+  "p95_ms": 262.66570000734646,
+  "model_mb_fp16": 22.813952,
+  "top1_sim_hits_median": 0.8326585292816162,
+  "top1_sim_misses_median": 0.6614288687705994
+ }
+]

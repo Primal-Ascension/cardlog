@@ -1,0 +1,78 @@
+[
+ {
+  "photos": 41,
+  "group_top1": 0.7560975609756098,
+  "group_top5": 0.8292682926829268,
+  "exact_top1": 0.4146341463414634,
+  "encoder": "dinov2-small",
+  "mode": "full",
+  "core": {
+   "photos": 29,
+   "group_top1": 0.7586206896551724,
+   "group_top5": 0.8275862068965517,
+   "exact_top1": 0.3448275862068966
+  },
+  "median_ms": 250.08719999459572,
+  "p95_ms": 292.51379999914207,
+  "model_mb_fp16": 44.113152,
+  "top1_sim_hits_median": 0.7119373083114624,
+  "top1_sim_misses_median": 0.5410951673984528
+ },
+ {
+  "photos": 41,
+  "group_top1": 0.7073170731707317,
+  "group_top5": 0.8536585365853658,
+  "exact_top1": 0.43902439024390244,
+  "encoder": "dinov2-small",
+  "mode": "art",
+  "core": {
+   "photos": 29,
+   "group_top1": 0.7586206896551724,
+   "group_top5": 0.7931034482758621,
+   "exact_top1": 0.4482758620689655
+  },
+  "median_ms": 250.65269999322481,
+  "p95_ms": 305.724600009853,
+  "model_mb_fp16": 44.113152,
+  "top1_sim_hits_median": 0.6803284287452698,
+  "top1_sim_misses_median": 0.5645202100276947
+ },
+ {
+  "photos": 41,
+  "group_top1": 0.7560975609756098,
+  "group_top5": 0.9512195121951219,
+  "exact_top1": 0.36585365853658536,
+  "encoder": "MobileCLIP2-S0/dfndr2b",
+  "mode": "full",
+  "core": {
+   "photos": 29,
+   "group_top1": 0.8275862068965517,
+   "group_top5": 0.9310344827586207,
+   "exact_top1": 0.41379310344827586
+  },
+  "median_ms": 225.3789000096731,
+  "p95_ms": 273.870100005297,
+  "model_mb_fp16": 22.813952,
+  "top1_sim_hits_median": 0.8411670923233032,
+  "top1_sim_misses_median": 0.7618201971054077
+ },
+ {
+  "photos": 41,
+  "group_top1": 0.6585365853658537,
+  "group_top5": 0.8048780487804879,
+  "exact_top1": 0.36585365853658536,
+  "encoder": "MobileCLIP2-S0/dfndr2b",
+  "mode": "art",
+  "core": {
+   "photos": 29,
+   "group_top1": 0.6206896551724138,
+   "group_top5": 0.7586206896551724,
+   "exact_top1": 0.3103448275862069
+  },
+  "median_ms": 209.4171000062488,
+  "p95_ms": 256.3531000050716,
+  "model_mb_fp16": 22.813952,
+  "top1_sim_hits_median": 0.7346187829971313,
+  "top1_sim_misses_median": 0.6653356552124023
+ }
+]
