@@ -1,0 +1,19 @@
+{
+  "_doc": "Manual art-group decisions, applied after the automatic pass. merge: same art. split: keep apart. Each pair is two card ids.",
+  "merge": [
+    ["base1-9", "base4-9"],
+    ["base3-3", "base3-18"],
+    ["base1-99", "base4-127"],
+    ["base1-73", "base4-102"],
+    ["dp3-50", "pop7-7"]
+  ],
+  "_merge_notes": {
+    "base1-9 / base4-9": "Magneton, Base Set / Base Set 2. Checked by eye in Phase 1; low-detail art, 17 keypoints before trimming.",
+    "base3-3 / base3-18": "Fossil Ditto holo / non-holo. Checked by eye in Phase 1.",
+    "base1-99 / base4-127": "Grass Energy, Base Set / Base Set 2. Checked by eye in Phase 1.",
+    "base1-73 / base4-102": "Impostor / Imposter Professor Oak: same art, spelling changed in Base Set 2. Phase 2 review.",
+    "dp3-50 / pop7-7": "Flaaffy, Secret Wonders / POP Series 7: same art. Phase 2 review."
+  },
+  "_reviewed_not_merged": "Phase 2 review of the 1996-2007 log: Jungle Electrode #18 vs Base Electrode is a different card with the same art; Delta Species Dittos share photos but have different attacks; Worlds-promo trainers and Warp Energies have rearranged art; Holon Energies, Cubes and Rainbow Energies are different cards on one template.",
+  "split": []
+}

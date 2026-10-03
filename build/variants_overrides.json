@@ -1,0 +1,30 @@
+{
+  "_doc": [
+    "Printings the pokemontcg.io tcgplayer.prices keys miss. Applied by variants.py.",
+    "sets.<id>.replace: these printings replace whatever the keys say, for every card in the set.",
+    "sets.<id>.ensure: these printings are added to every card in the set if missing.",
+    "cards.<id>.add / remove: per-card fixes, applied last.",
+    "optional: true marks a printing shown in the popup but never chosen as default."
+  ],
+  "sets": {
+    "base1": {
+      "note": "Base Set: the keys only say normal/holofoil. Every card was printed 1st Edition (all shadowless), Shadowless (unlimited-era, no stamp), Unlimited, and the 1999-2000 UK 4th print.",
+      "replace": [
+        {"code": "unlimited", "label": "Unlimited"},
+        {"code": "shadowless", "label": "Shadowless"},
+        {"code": "1st_edition", "label": "1st Edition"},
+        {"code": "4th_print", "label": "4th Print (UK)", "optional": true}
+      ]
+    },
+    "base2": {"note": "Jungle", "ensure": [{"code": "unlimited", "label": "Unlimited"}, {"code": "1st_edition", "label": "1st Edition"}]},
+    "base3": {"note": "Fossil", "ensure": [{"code": "unlimited", "label": "Unlimited"}, {"code": "1st_edition", "label": "1st Edition"}]},
+    "base5": {"note": "Team Rocket", "ensure": [{"code": "unlimited", "label": "Unlimited"}, {"code": "1st_edition", "label": "1st Edition"}]},
+    "gym1": {"note": "Gym Heroes", "ensure": [{"code": "unlimited", "label": "Unlimited"}, {"code": "1st_edition", "label": "1st Edition"}]},
+    "gym2": {"note": "Gym Challenge", "ensure": [{"code": "unlimited", "label": "Unlimited"}, {"code": "1st_edition", "label": "1st Edition"}]},
+    "neo1": {"note": "Neo Genesis", "ensure": [{"code": "unlimited", "label": "Unlimited"}, {"code": "1st_edition", "label": "1st Edition"}]},
+    "neo2": {"note": "Neo Discovery", "ensure": [{"code": "unlimited", "label": "Unlimited"}, {"code": "1st_edition", "label": "1st Edition"}]},
+    "neo3": {"note": "Neo Revelation", "ensure": [{"code": "unlimited", "label": "Unlimited"}, {"code": "1st_edition", "label": "1st Edition"}]},
+    "neo4": {"note": "Neo Destiny", "ensure": [{"code": "unlimited", "label": "Unlimited"}, {"code": "1st_edition", "label": "1st Edition"}]}
+  },
+  "cards": {}
+}
