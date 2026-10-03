@@ -15,7 +15,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from common import EMBED_DIR, PHOTOS_DIR, POC_DIR, RESULTS_DIR, image_path, load_cards
+from common import CORE_SETS, EMBED_DIR, PHOTOS_DIR, POC_DIR, RESULTS_DIR, image_path, load_cards
 from encoders import DEVICE, ENCODERS
 from imaging import art_crop, detect_and_warp, load_rgb
 
@@ -96,18 +96,26 @@ def run_config(enc, mode, cards, group_of, photos, warped, detect_ms):
             'top5': ['%s (%.3f)' % (ids[i], sims[i]) for i in top],
         })
 
-    n = len(rows)
     hit = [r['top1_sim'] for r in rows if r['group_top1']]
     miss = [r['top1_sim'] for r in rows if not r['group_top1']]
-    return {
-        'encoder': getattr(enc, 'variant', enc.name), 'mode': mode, 'photos': n,
-        'group_top1': sum(r['group_top1'] for r in rows) / n,
-        'group_top5': sum(r['group_top5'] for r in rows) / n,
-        'exact_top1': sum(r['exact_top1'] for r in rows) / n,
+    core = [r for r in rows if r['label'].split('-')[0] in CORE_SETS]
+    return dict(rates(rows), **{
+        'encoder': getattr(enc, 'variant', enc.name), 'mode': mode,
+        'core': rates(core),
         'median_ms': pct(times, 50), 'p95_ms': pct(times, 95),
         'model_mb_fp16': enc.fp16_bytes() / 1e6,
         'top1_sim_hits_median': pct(hit, 50), 'top1_sim_misses_median': pct(miss, 50),
         'rows': rows,
+    })
+
+
+def rates(rows):
+    n = len(rows) or 1
+    return {
+        'photos': len(rows),
+        'group_top1': sum(r['group_top1'] for r in rows) / n,
+        'group_top5': sum(r['group_top5'] for r in rows) / n,
+        'exact_top1': sum(r['exact_top1'] for r in rows) / n,
     }
 
 
@@ -117,16 +125,24 @@ def write_report(results, detected, total, out_dir):
         'Photos: %d. Card outline detected in %d (%.0f%%); the rest fell back to the full frame.'
         % (total, detected, 100.0 * detected / total), '',
         'Device: %s. Times include detection and two embeddings (upright + 180 degrees).' % DEVICE, '',
-        'Targets: art group in top 5 >= 95%, top 1 >= 85%.', '',
-        '| Encoder | Crop | Group top-1 | Group top-5 | Exact top-1 | Median ms | p95 ms | Model MB (fp16) | Top-1 sim, hits / misses |',
-        '|---|---|---|---|---|---|---|---|---|',
+        'Targets: art group in top 5 >= 95%%, top 1 >= 85%%, measured on the core four sets '
+        '(%s).' % ', '.join(CORE_SETS), '',
+        '| Encoder | Crop | Core: group top-1 | Core: group top-5 | Core: exact top-1 '
+        '| All: group top-1 | All: group top-5 | All: exact top-1 '
+        '| Median ms | p95 ms | Model MB (fp16) | Top-1 sim, hits / misses |',
+        '|---|---|---|---|---|---|---|---|---|---|---|---|',
     ]
     for r in results:
-        lines.append('| %s | %s | %.1f%% | %.1f%% | %.1f%% | %.0f | %.0f | %.1f | %.3f / %.3f |' % (
-            r['encoder'], r['mode'], 100 * r['group_top1'], 100 * r['group_top5'],
-            100 * r['exact_top1'], r['median_ms'], r['p95_ms'], r['model_mb_fp16'],
-            r['top1_sim_hits_median'], r['top1_sim_misses_median']))
-    lines += ['', 'Per-photo misses are in misses.csv.']
+        c = r['core']
+        lines.append('| %s | %s | %.1f%% | %.1f%% | %.1f%% | %.1f%% | %.1f%% | %.1f%% '
+                     '| %.0f | %.0f | %.1f | %.3f / %.3f |' % (
+                         r['encoder'], r['mode'],
+                         100 * c['group_top1'], 100 * c['group_top5'], 100 * c['exact_top1'],
+                         100 * r['group_top1'], 100 * r['group_top5'], 100 * r['exact_top1'],
+                         r['median_ms'], r['p95_ms'], r['model_mb_fp16'],
+                         r['top1_sim_hits_median'], r['top1_sim_misses_median']))
+    lines += ['', 'Core photos: %d of %d.' % (results[0]['core']['photos'], total) if results else '',
+              '', 'Per-photo misses are in misses.csv.']
     (out_dir / 'report.md').write_text('\n'.join(lines) + '\n', encoding='utf-8')
 
 
@@ -170,6 +186,9 @@ def main():
     write_report(results, detected, len(photos), out_dir)
     (out_dir / 'results.json').write_text(json.dumps(
         [{k: v for k, v in r.items() if k != 'rows'} for r in results], indent=1), encoding='utf-8')
+    print('Core sets: ' + '; '.join('%s/%s group@1 %.1f%% group@5 %.1f%%' % (
+        r['encoder'], r['mode'], 100 * r['core']['group_top1'], 100 * r['core']['group_top5'])
+        for r in results))
     with open(out_dir / 'misses.csv', 'w', newline='', encoding='utf-8') as f:
         w = csv.writer(f)
         w.writerow(['encoder', 'mode', 'photo', 'label', 'group_top1', 'group_top5', 'exact_top1', 'top5'])

@@ -9,8 +9,11 @@ import requests
 
 API_BASE = 'https://api.pokemontcg.io/v2'
 
-# Phase 1 sets (IDs verified against the live API during Phase 0).
-POC_SETS = ['base1', 'base2', 'base4', 'base6']
+# Phase 1 sets (IDs verified against the live API during Phase 0). The spec's
+# targets are measured on CORE_SETS; Fossil was added at the owner's request
+# for more photos and more same-set holo/non-holo pairs.
+CORE_SETS = ['base1', 'base2', 'base4', 'base6']
+POC_SETS = CORE_SETS + ['base3']
 
 POC_DIR = Path(__file__).resolve().parent
 PHOTOS_DIR = POC_DIR / 'photos'

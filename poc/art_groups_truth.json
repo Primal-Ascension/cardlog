@@ -672,6 +672,186 @@
    "base4-29"
   ],
   [
+   "base3-1",
+   "base3-16"
+  ],
+  [
+   "base3-10",
+   "base3-25"
+  ],
+  [
+   "base3-11",
+   "base3-26",
+   "base6-28"
+  ],
+  [
+   "base3-12",
+   "base3-27",
+   "base6-30"
+  ],
+  [
+   "base3-13",
+   "base3-28",
+   "base6-16"
+  ],
+  [
+   "base3-14",
+   "base3-29"
+  ],
+  [
+   "base3-15",
+   "base3-30"
+  ],
+  [
+   "base3-2",
+   "base3-17",
+   "base6-2"
+  ],
+  [
+   "base3-3",
+   "base3-18"
+  ],
+  [
+   "base3-31"
+  ],
+  [
+   "base3-32"
+  ],
+  [
+   "base3-33",
+   "base6-76"
+  ],
+  [
+   "base3-34"
+  ],
+  [
+   "base3-35",
+   "base6-43"
+  ],
+  [
+   "base3-36",
+   "base6-24"
+  ],
+  [
+   "base3-37",
+   "base6-44"
+  ],
+  [
+   "base3-38"
+  ],
+  [
+   "base3-39"
+  ],
+  [
+   "base3-4",
+   "base3-19"
+  ],
+  [
+   "base3-40",
+   "base6-58"
+  ],
+  [
+   "base3-41",
+   "base6-62"
+  ],
+  [
+   "base3-42",
+   "base6-63"
+  ],
+  [
+   "base3-43"
+  ],
+  [
+   "base3-44",
+   "base6-66"
+  ],
+  [
+   "base3-45"
+  ],
+  [
+   "base3-46"
+  ],
+  [
+   "base3-47",
+   "base6-77"
+  ],
+  [
+   "base3-48",
+   "base6-78"
+  ],
+  [
+   "base3-49"
+  ],
+  [
+   "base3-5",
+   "base3-20",
+   "base6-11"
+  ],
+  [
+   "base3-50",
+   "base6-48"
+  ],
+  [
+   "base3-51"
+  ],
+  [
+   "base3-52",
+   "base6-57"
+  ],
+  [
+   "base3-53"
+  ],
+  [
+   "base3-54"
+  ],
+  [
+   "base3-55",
+   "base6-93"
+  ],
+  [
+   "base3-56",
+   "base6-96"
+  ],
+  [
+   "base3-57"
+  ],
+  [
+   "base3-58"
+  ],
+  [
+   "base3-59"
+  ],
+  [
+   "base3-6",
+   "base3-21",
+   "base6-46"
+  ],
+  [
+   "base3-60"
+  ],
+  [
+   "base3-61"
+  ],
+  [
+   "base3-62",
+   "base6-109"
+  ],
+  [
+   "base3-7",
+   "base3-22",
+   "base6-13"
+  ],
+  [
+   "base3-8",
+   "base3-23",
+   "base6-25"
+  ],
+  [
+   "base3-9",
+   "base3-24",
+   "base6-27"
+  ],
+  [
    "base4-102"
   ],
   [
@@ -687,37 +867,7 @@
    "base6-106"
   ],
   [
-   "base6-109"
-  ],
-  [
-   "base6-11"
-  ],
-  [
-   "base6-13"
-  ],
-  [
-   "base6-16"
-  ],
-  [
-   "base6-2"
-  ],
-  [
-   "base6-24"
-  ],
-  [
-   "base6-25"
-  ],
-  [
-   "base6-27"
-  ],
-  [
-   "base6-28"
-  ],
-  [
    "base6-29"
-  ],
-  [
-   "base6-30"
   ],
   [
    "base6-38"
@@ -729,52 +879,16 @@
    "base6-4"
   ],
   [
-   "base6-43"
-  ],
-  [
-   "base6-44"
-  ],
-  [
-   "base6-46"
-  ],
-  [
-   "base6-48"
-  ],
-  [
    "base6-5"
   ],
   [
-   "base6-57"
-  ],
-  [
-   "base6-58"
-  ],
-  [
    "base6-6"
-  ],
-  [
-   "base6-62"
-  ],
-  [
-   "base6-63"
-  ],
-  [
-   "base6-66"
   ],
   [
    "base6-7"
   ],
   [
    "base6-73"
-  ],
-  [
-   "base6-76"
-  ],
-  [
-   "base6-77"
-  ],
-  [
-   "base6-78"
   ],
   [
    "base6-79"
@@ -790,12 +904,6 @@
   ],
   [
    "base6-9"
-  ],
-  [
-   "base6-93"
-  ],
-  [
-   "base6-96"
   ]
  ],
  "review": [
@@ -822,6 +930,15 @@
    "b": "base6-46",
    "name": "Haunter",
    "inliers": 26,
+   "artist_a": "Keiji Kinebuchi",
+   "artist_b": "Ken Sugimori",
+   "reason": "art matches, artist differs"
+  },
+  {
+   "a": "base4-43",
+   "b": "base3-21",
+   "name": "Haunter",
+   "inliers": 23,
    "artist_a": "Keiji Kinebuchi",
    "artist_b": "Ken Sugimori",
    "reason": "art matches, artist differs"

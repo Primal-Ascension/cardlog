@@ -29,6 +29,11 @@ OUT = POC_DIR / 'art_groups_truth.json'
 INLIERS_SAME = 20     # at or above: same art (artist must also match)
 INLIERS_REVIEW = 10   # artist matches but inliers fall between the bounds: flag
 
+# Pairs confirmed by eye that the keypoint test misses (featureless art).
+MANUAL_SAME = [
+    ('base3-3', 'base3-18'),   # Fossil Ditto holo / non-holo: 17 inliers
+]
+
 _sift = cv2.SIFT_create(nfeatures=1500)
 _clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
 _matcher = cv2.BFMatcher()
@@ -94,6 +99,11 @@ def main():
                 review.append(dict(pair, reason='art matches, artist differs'))
             elif n >= INLIERS_REVIEW and artists_ok:
                 review.append(dict(pair, reason='same name and artist, art match borderline'))
+
+    manual = {frozenset(p) for p in MANUAL_SAME if all(i in parent for i in p)}
+    for a, b in manual:
+        parent[find(a)] = find(b)
+    review = [p for p in review if frozenset((p['a'], p['b'])) not in manual]
 
     members = defaultdict(list)
     for c in cards:
