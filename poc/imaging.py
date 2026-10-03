@@ -73,6 +73,26 @@ def _edge_maps(rgb, gray):
     yield 255 - thr
 
 
+def _is_rectangular(q, max_skew=25.0, max_side_ratio=1.4):
+    """A card seen by a hand-held phone: corners near 90 degrees, opposite sides similar."""
+    for i in range(4):
+        a, b, c = q[i - 1], q[i], q[(i + 1) % 4]
+        v1, v2 = a - b, c - b
+        cos = float(np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2) + 1e-6))
+        if abs(np.degrees(np.arccos(np.clip(cos, -1, 1))) - 90) > max_skew:
+            return False
+    sides = [np.linalg.norm(q[(i + 1) % 4] - q[i]) for i in range(4)]
+    return max(sides[0], sides[2]) <= max_side_ratio * min(sides[0], sides[2]) and \
+        max(sides[1], sides[3]) <= max_side_ratio * min(sides[1], sides[3])
+
+
+def _is_frame(q, shape, tol=0.03):
+    """All four corners at the photo's corners: the frame or slab edge, not a card."""
+    h, w = shape[:2]
+    corners = np.array([[0, 0], [w, 0], [w, h], [0, h]], np.float32)
+    return bool(np.all(np.abs(q - corners) <= [tol * w, tol * h]))
+
+
 def _edge_support(edges, quad, samples=240):
     """Fraction of points along the quad's sides that sit on an edge pixel."""
     h, w = edges.shape
@@ -132,6 +152,8 @@ def find_card_quad(rgb_np):
             area = cv2.contourArea(quad)
             qw, qh = _quad_aspect(quad)
             if area <= best_area or qw > qh or abs(qw / qh - CARD_ASPECT) > ASPECT_TOL:
+                continue
+            if not _is_rectangular(quad) or _is_frame(quad, gray.shape):
                 continue
             if _edge_support(support_map, quad) >= MIN_EDGE_SUPPORT:
                 best, best_area = quad, area

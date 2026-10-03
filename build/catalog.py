@@ -13,7 +13,7 @@ import json
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from config import API_BASE, CACHE, CARDS_DIR, SETS_FILE, image_path
+from config import API_BASE, CACHE, CARDS_DIR, IMAGES_DIR, SETS_FILE, image_path
 
 MISSING_FILE = CACHE / 'missing_images.json'
 from net import api_headers, get
@@ -113,6 +113,7 @@ def main():
         for p in sorted(CARDS_DIR.glob('*.json')):
             all_records.extend(json.loads(p.read_text(encoding='utf-8')))
         download_images(all_records)
+        download_symbols(json.loads(SETS_FILE.read_text(encoding='utf-8')))
         return
 
     sets = fetch_sets()
@@ -165,6 +166,23 @@ def main():
 
     if not args.no_images:
         download_images(all_records)
+        download_symbols(sets)
+
+
+def download_symbols(sets):
+    """Set symbols for the popup, published same-origin so they work offline."""
+    jobs = [(s['symbol_url'], IMAGES_DIR / 'symbols' / (s['id'] + '.png')) for s in sets if s.get('symbol_url')]
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        n = sum(pool.map(lambda j: _try(download, j), jobs))
+    print('set symbols: %d downloaded, %d total' % (n, len(jobs)), flush=True)
+
+
+def _try(fn, arg):
+    try:
+        return fn(arg)
+    except Exception as e:
+        print('  symbol failed:', arg[0], e, flush=True)
+        return 0
 
 
 def download_images(all_records):

@@ -429,6 +429,14 @@
   @keyframes spin { to { transform: rotate(360deg); } }
 
   .cache-pill { text-align: center; font-size: 12px; color: var(--muted); padding: 8px; background: var(--panel); border-radius: 8px; margin-bottom: 12px; }
+  /* ── Scanner hookup ── */
+  .scan-match {
+    display: flex; align-items: center; gap: 8px; margin-top: 8px;
+    font-size: 12px; color: var(--text); background: rgba(46,204,113,.12);
+    border: 1px solid var(--green); border-radius: 10px; padding: 8px 10px;
+  }
+  .scan-match span { flex: 1; }
+  .scan-match button { background: none; border: none; color: var(--muted); font-size: 16px; padding: 0 4px; }
 </style>
 </head>
 <body>
@@ -466,6 +474,15 @@
         <button type="button" id="cancel-edit-btn" class="btn btn-ghost" style="padding:8px 12px;">Cancel</button>
       </div>
       <div id="add-banner"></div>
+      <div id="outbox-banner" class="banner hidden" style="display:flex;align-items:center;justify-content:space-between;gap:10px;"></div>
+      <div id="scan-row" style="margin-bottom:14px;">
+        <button type="button" id="scan-btn" class="btn btn-primary btn-block">📷 Scan card</button>
+        <div id="scan-status" style="margin-top:8px;"></div>
+        <div id="scan-match" class="scan-match hidden">
+          <span id="scan-match-text"></span>
+          <button type="button" id="scan-match-clear" aria-label="Clear match">✕</button>
+        </div>
+      </div>
       <div id="same-as-last-row" class="same-as-last hidden"><button id="same-as-last-btn" class="btn btn-ghost btn-block">Same as last card</button></div>
 
       <div class="photo-row">
@@ -499,8 +516,10 @@
         <label>Variant</label>
         <select id="f-variant">
           <option value="">-</option>
+          <option>Unlimited</option><option>Normal</option>
           <option>Holo</option><option>Reverse Holo</option><option>Full Art</option>
           <option>Secret Rare</option><option>1st Edition</option><option>Shadowless</option>
+          <option>1st Edition Shadowless</option><option>4th Print (UK)</option>
           <option>Gold Star</option><option>Other</option>
         </select>
       </div>
@@ -674,7 +693,8 @@
     lastSaved: null,
     online: true,
     reorderMode: false,
-    editingId: null
+    editingId: null,
+    scanTcgId: ''
   };
 
   var STICKY_KEYS = ['set', 'variant', 'cardType', 'condition', 'grader', 'language'];
@@ -797,8 +817,10 @@
   function ping() {
     api('ping', {}, 'GET')
       .then(function (res) {
+        var wasOnline = state.online;
         state.online = !!(res && res.ok);
         updateSyncPill();
+        if (state.online && !wasOnline) flushOutbox();   // server reachable again
       })
       .catch(function () {
         state.online = false;
@@ -903,6 +925,8 @@
     $('admin-btn').classList.add('hidden');
     refreshCards();
     showTab('add');
+    loadScannerUI();
+    flushOutbox();
   }
 
   function attemptAdminEntry() {
@@ -1502,6 +1526,7 @@
     });
     $('front-input').value = '';
     $('back-input').value = '';
+    setScanMatch(null);
     $('photo-error').classList.add('hidden');
     $('name-error').classList.add('hidden');
     $('price-error').classList.add('hidden');
@@ -1542,7 +1567,8 @@
       language: $('f-language').value,
       price: $('f-price').value,
       cost: $('f-cost').value,
-      notes: $('f-notes').value.trim()
+      notes: $('f-notes').value.trim(),
+      tcgId: state.scanTcgId || ''
     };
   }
 
@@ -1588,6 +1614,7 @@
     $('f-price').value = (c.price === '' || c.price == null) ? '' : c.price;
     $('f-cost').value = (c.cost === '' || c.cost == null) ? '' : c.cost;
     $('f-notes').value = c.notes || '';
+    if (c.tcgId) setScanMatch({ id: c.tcgId, text: 'Catalog match: ' + c.tcgId });
 
     showTilePreview('front-tile', c.frontId);
     showTilePreview('back-tile', c.backId);
@@ -1666,6 +1693,7 @@
     $('save-card-btn').disabled = true;
     $('save-card-btn').textContent = 'Saving…';
     showAddBanner();
+    var offlineNow = !navigator.onLine || !state.online;
 
     Promise.all([
       blobToBase64(state.frontBlob),
@@ -1677,20 +1705,23 @@
       };
       if (results[1]) payload.back = { mime: 'image/jpeg', b64: results[1] };
 
-      return api('addCard', payload);
+      // No signal (or it drops mid-save): keep the card on this device and
+      // upload it later, so scanning at a show never stalls on the network.
+      if (offlineNow) return queueCard(payload);
+      return api('addCard', payload).catch(function () { return queueCard(payload); });
     }).then(function (res) {
       state.inFlight = false;
       $('save-card-btn').disabled = false;
       $('save-card-btn').textContent = '💾 Save Card';
 
-      if (res && res.ok) {
+      if (res && (res.ok || res.queued)) {
         state.lastSaved = { name: card.name, set: card.set };
         $('same-as-last-row').classList.remove('hidden');
         saveSticky();
-        toast('Saved ' + res.sku + ' ✓');
+        toast(res.queued ? 'Saved on this device ✓ Uploads when back online' : 'Saved ' + res.sku + ' ✓');
         pendingCardId = null;
         clearAddForm();
-        refreshCards();
+        if (!res.queued) refreshCards();
         $('front-tile').scrollIntoView({ behavior: 'smooth', block: 'center' });
       } else {
         showAddBanner('err', 'Could not save: ' + (res && res.error || 'unknown error') + '. Nothing was lost. Tap Save to retry.');
@@ -1704,6 +1735,164 @@
   }
 
   $('save-card-btn').addEventListener('click', saveCard);
+
+  // ============================================================
+  // OFFLINE SAVE QUEUE: cards saved without signal wait in IndexedDB
+  // and upload in order once the server is reachable again.
+  // ============================================================
+  function outboxDB() {
+    return new Promise(function (resolve, reject) {
+      try {
+        var req = indexedDB.open('cardlog', 1);
+        req.onupgradeneeded = function () { req.result.createObjectStore('outbox', { keyPath: 'card.id' }); };
+        req.onsuccess = function () { resolve(req.result); };
+        req.onerror = function () { reject(req.error); };
+      } catch (e) { reject(e); }
+    });
+  }
+
+  function outboxTx(mode, fn) {
+    return outboxDB().then(function (db) {
+      return new Promise(function (resolve, reject) {
+        var tx = db.transaction('outbox', mode), store = tx.objectStore('outbox'), out = fn(store);
+        tx.oncomplete = function () { resolve(out && out.result !== undefined ? out.result : out); };
+        tx.onerror = function () { reject(tx.error); };
+      });
+    });
+  }
+
+  function queueCard(payload) {
+    payload.queuedAt = Date.now();
+    return outboxTx('readwrite', function (s) { return s.put(payload); }).then(function () {
+      renderOutbox();
+      return { queued: true };
+    });
+  }
+
+  function outboxAll() { return outboxTx('readonly', function (s) { return s.getAll(); }).catch(function () { return []; }); }
+  function outboxDelete(id) { return outboxTx('readwrite', function (s) { return s.delete(id); }); }
+
+  function renderOutbox() {
+    return outboxAll().then(function (items) {
+      var el = $('outbox-banner');
+      if (!items.length) { el.classList.add('hidden'); return 0; }
+      el.innerHTML = '<span>⏳ ' + items.length + (items.length === 1 ? ' card' : ' cards') +
+        ' saved on this device, waiting to upload</span>' +
+        '<button type="button" class="btn btn-ghost" id="outbox-retry" style="padding:8px 12px;">Upload now</button>';
+      el.classList.remove('hidden');
+      $('outbox-retry').addEventListener('click', function () { flushOutbox(true); });
+      return items.length;
+    });
+  }
+
+  var flushing = false;
+  function flushOutbox(userAsked) {
+    if (flushing || !state.admin) return Promise.resolve();
+    return outboxAll().then(function (items) {
+      renderOutbox();
+      if (!items.length) return;
+      if (!navigator.onLine) { if (userAsked) toast('Still offline'); return; }
+      flushing = true;
+      items.sort(function (a, b) { return (a.queuedAt || 0) - (b.queuedAt || 0); });
+      // A save can reach the server even when its reply is lost; skip cards
+      // the server already has so nothing is added twice.
+      return api('listAdmin', {}).then(function (res) {
+        if (!(res && res.ok)) throw new Error('list failed');
+        var have = {};
+        (res.cards || []).forEach(function (c) { have[c.id] = true; });
+        var sent = 0;
+        return items.reduce(function (p, item) {
+          return p.then(function (stop) {
+            if (stop) return true;
+            if (have[item.card.id]) return outboxDelete(item.card.id).then(function () { return false; });
+            var body = { card: item.card, front: item.front };
+            if (item.back) body.back = item.back;
+            return api('addCard', body).then(function (r) {
+              if (r && r.ok) { sent++; return outboxDelete(item.card.id).then(function () { return false; }); }
+              return true;
+            }, function () { return true; });
+          });
+        }, Promise.resolve(false)).then(function () {
+          if (sent) toast('Uploaded ' + sent + (sent === 1 ? ' saved card' : ' saved cards') + ' ✓');
+        });
+      }).catch(function () {
+        if (userAsked) toast('Could not reach the server. Will retry.');
+      }).then(function () {
+        flushing = false;
+        renderOutbox();
+        refreshCards();
+      });
+    });
+  }
+
+  // ============================================================
+  // SCANNER HOOKUP: scan/scanner.js is loaded only in admin mode; the
+  // model and catalog load only when the scanner is first opened.
+  // ============================================================
+  var scannerLoading = null;
+  function loadScannerUI() {
+    if (scannerLoading) return scannerLoading;
+    scannerLoading = new Promise(function (resolve, reject) {
+      var s = document.createElement('script');
+      s.src = 'scan/scanner.js';
+      s.onload = function () {
+        try { window.CardLogScanner.mountStatus($('scan-status')); } catch (e) {}
+        resolve(window.CardLogScanner);
+      };
+      s.onerror = function () { scannerLoading = null; reject(new Error('scanner unavailable')); };
+      document.head.appendChild(s);
+    });
+    return scannerLoading;
+  }
+
+  $('scan-btn').addEventListener('click', function () {
+    loadScannerUI().then(function (sc) { sc.open({ onConfirm: applyScanResult }); })
+      .catch(function () { toast('Scanner could not load. Check connection.'); });
+  });
+
+  function setScanMatch(m) {
+    state.scanTcgId = m ? m.id : '';
+    $('scan-match-text').textContent = m ? m.text : '';
+    $('scan-match').classList.toggle('hidden', !m);
+  }
+  $('scan-match-clear').addEventListener('click', function () { setScanMatch(null); });
+
+  function setVariant(label) {
+    var sel = $('f-variant');
+    var has = Array.prototype.some.call(sel.options, function (o) { return o.value === label || o.text === label; });
+    if (!has) { var o = document.createElement('option'); o.text = label; sel.add(o); }
+    sel.value = label;
+  }
+
+  function setFrontPhoto(blob) {
+    var tile = $('front-tile'), old = tile.querySelector('img');
+    if (old) old.remove();
+    state.frontBlob = blob;
+    var img = document.createElement('img');
+    img.src = URL.createObjectURL(blob);
+    tile.insertBefore(img, tile.firstChild);
+    tile.classList.add('filled');
+    $('photo-error').classList.add('hidden');
+  }
+
+  // A confirmed scan fills the Add form the same way Edit does.
+  function applyScanResult(res) {
+    var r = res.record;
+    if (state.currentTab !== 'add') showTab('add');
+    var number = /^\d+$/.test(r.number) && r.printed_total ? r.number + '/' + r.printed_total : r.number;
+    var setName = r.set_name === 'Base' ? 'Base Set' : r.set_name;
+    $('f-name').value = r.name;
+    $('f-set').value = setName;
+    $('f-number').value = number;
+    $('f-variant').value = '';
+    if (res.printing) setVariant(res.printing.label);
+    $('f-language').value = 'English';
+    setScanMatch({ id: r.id, text: 'Scanned: ' + r.name + ' · ' + setName + ' ' + number + (res.printing ? ' · ' + res.printing.label : '') });
+    // Use the straightened scan as the front photo unless one was already taken.
+    if (res.photoBlob && !state.frontBlob && !state.editingId) setFrontPhoto(res.photoBlob);
+    $('name-error').classList.add('hidden');
+    $('f-price').focus();
+  }
 
   // ============================================================
   // SETTINGS
@@ -1757,7 +1946,11 @@
       ping();
       setTimeout(function () { $('refresh-btn').style.opacity = '1'; }, 500);
     });
-    window.addEventListener('online', function () { state.online = true; updateSyncPill(); refreshCards(); });
+    window.addEventListener('online', function () { state.online = true; updateSyncPill(); refreshCards(); flushOutbox(); });
+    // Offline app shell + scanner data cache (see sw.js).
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js').catch(function () {});
+    }
     window.addEventListener('offline', function () { state.online = false; updateSyncPill(); });
 
     var longPressTimer;

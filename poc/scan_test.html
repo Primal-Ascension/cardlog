@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scanner parity test</title>
+<style>
+  body { font: 14px system-ui, sans-serif; margin: 16px; background: #fff; color: #111; }
+  table { border-collapse: collapse; } td, th { border: 1px solid #ccc; padding: 3px 6px; font-size: 12px; }
+  .ok { background: #dfd; } .bad { background: #fdd; } img { height: 70px; }
+</style>
+</head>
+<body>
+<h1>Scanner parity test</h1>
+<p>Runs the in-browser pipeline (scan/detect.js + scan/engine.js) on poc/photos. Local dev only; photos are gitignored.</p>
+<pre id="log"></pre>
+<table id="tbl"><tr><th>Photo</th><th>Label</th><th>Detected</th><th>Top 1</th><th>Score</th><th>Group@1</th><th>Group@5</th><th>ms</th><th>Warped</th></tr></table>
+<script src="../scan/detect.js"></script>
+<script src="../scan/engine.js"></script>
+<script>
+(async function () {
+  const log = (s) => { document.getElementById('log').textContent += s + '\n'; };
+  ScanEngine.setBase('../');
+  const E = await ScanEngine.load(log);
+  log('backend: ' + E.backend + ' | cards: ' + E.n + ' | load ' + Math.round(E.timings.total) + ' ms');
+  // Grade against the full catalog's art groups: a Celebrations or Evolutions
+  // reprint of the photographed card is a correct art-group match.
+  const groupOf = new Proxy({}, {
+    get: (_, id) => { const i = E.byId[id]; return i === undefined ? undefined : (E.records[i].art_group_id || id); },
+    has: (_, id) => id in E.byId
+  });
+  // Directory listing from python http.server.
+  const html = await (await fetch('photos/')).text();
+  const files = [...html.matchAll(/href="([^"]+\.(?:jpg|jpeg|png))"/gi)].map((m) => decodeURIComponent(m[1]));
+  const cv = E.cv, core = ['base1', 'base2', 'base4', 'base6'];
+  const res = { all: [0, 0, 0], core: [0, 0, 0] }, times = [];
+  for (const f of files) {
+    const label = f.replace(/\.[^.]+$/, '').split('_')[0];
+    if (!(label in groupOf)) continue;
+    const img = new Image();
+    img.src = 'photos/' + encodeURIComponent(f);
+    await img.decode();
+    const canvas = document.createElement('canvas');
+    canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
+    canvas.getContext('2d').drawImage(img, 0, 0);
+    const t0 = performance.now();
+    const src = cv.imread(canvas);
+    const quad = CardDetect.findCardQuad(cv, src, 1000);
+    const card = quad ? CardDetect.warpCard(cv, src, quad) : CardDetect.fallbackCard(cv, src);
+    const rot = new cv.Mat();
+    cv.rotate(card, rot, cv.ROTATE_180);
+    const q = await ScanEngine.embed(E, [card, rot]);
+    const top = ScanEngine.match(E, q, 5);
+    const ms = performance.now() - t0;
+    times.push(ms);
+    const ids = top.map((t) => E.records[t.i].id);
+    const g1 = groupOf[ids[0]] === groupOf[label], g5 = ids.some((id) => groupOf[id] === groupOf[label]);
+    for (const k of (core.includes(label.split('-')[0]) ? ['all', 'core'] : ['all'])) {
+      res[k][0]++; res[k][1] += g1; res[k][2] += g5;
+    }
+    const out = document.createElement('canvas');
+    cv.imshow(out, card);
+    const tr = document.createElement('tr');
+    tr.className = g1 ? 'ok' : 'bad';
+    window.ROWS = window.ROWS || [];
+    ROWS.push({ f, label, quad: quad && quad.map((p) => p.map(Math.round)), top: ids, score: +top[0].score.toFixed(3), g1, g5 });
+    tr.innerHTML = `<td>${f}</td><td>${label}</td><td>${quad ? 'yes' : 'no'}</td><td>${ids[0]} ${E.records[top[0].i].name}</td>` +
+      `<td>${top[0].score.toFixed(3)}</td><td>${g1}</td><td>${g5}</td><td>${Math.round(ms)}</td><td></td>`;
+    const im = document.createElement('img'); im.src = out.toDataURL('image/jpeg', 0.7);
+    tr.lastChild.appendChild(im);
+    document.getElementById('tbl').appendChild(tr);
+    src.delete(); card.delete(); rot.delete();
+  }
+  times.sort((a, b) => a - b);
+  const pct = (a) => (100 * a).toFixed(1) + '%';
+  window.RESULT = {
+    backend: E.backend, n: res.all[0], core_n: res.core[0],
+    core_g1: res.core[1] / res.core[0], core_g5: res.core[2] / res.core[0],
+    all_g1: res.all[1] / res.all[0], all_g5: res.all[2] / res.all[0],
+    median_ms: times[times.length >> 1], load_ms: E.timings.total
+  };
+  log('core: group@1 ' + pct(RESULT.core_g1) + ' group@5 ' + pct(RESULT.core_g5) + ' (n=' + res.core[0] + ') | all: @1 ' +
+      pct(RESULT.all_g1) + ' @5 ' + pct(RESULT.all_g5) + ' (n=' + res.all[0] + ') | median ' + Math.round(RESULT.median_ms) + ' ms/photo');
+})().catch((e) => { document.getElementById('log').textContent += 'ERROR ' + e + '\n' + (e.stack || ''); window.RESULT = { error: String(e) }; });
+</script>
+</body>
+</html>

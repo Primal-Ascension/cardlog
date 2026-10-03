@@ -30,6 +30,10 @@ class Wrapped(torch.nn.Module):
         with torch.no_grad():
             pe = emb.interpolate_pos_encoding(torch.zeros(1, n, d), s, s).clone()
         emb.position_embeddings = torch.nn.Parameter(pe)
+        # HF skips its "already the right size" shortcut while tracing, so the
+        # bicubic Resize would still be exported (and ORT WebGPU's bicubic
+        # shader fails to compile). Return the baked table unconditionally.
+        emb.interpolate_pos_encoding = lambda embeddings, height, width: emb.position_embeddings
 
     def forward(self, pixel_values):
         v = self.model(pixel_values=pixel_values).pooler_output
@@ -85,6 +89,10 @@ def main():
     print('Exported (checked on %d real art crops):' % len(x))
     for p in (fp32, fp16, int8):
         check(p, x, ref)
+        ops = sorted({n.op_type for n in onnx.load(str(p)).graph.node})
+        if 'Resize' in ops:
+            raise SystemExit('FAIL: %s still contains a Resize node' % p.name)
+    print('ops in fp16 graph:', ', '.join(ops))
 
 
 if __name__ == '__main__':

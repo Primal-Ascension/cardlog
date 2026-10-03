@@ -22,8 +22,8 @@ from datetime import datetime, timezone
 import numpy as np
 
 from thumbs import thumb_rel
-from config import (BUILD_OUT, CACHE, CARDS_DIR, EMBED_DIR, ENCODER, MAX_FILE_BYTES, MAX_SITE_BYTES,
-                    MODEL_DIR, SETS_FILE)
+from config import (BUILD_OUT, CACHE, CARDS_DIR, EMBED_DIR, ENCODER, IMAGES_DIR, MAX_FILE_BYTES,
+                    MAX_SITE_BYTES, MODEL_DIR, SETS_FILE)
 
 RECORD_FIELDS = ['id', 'name', 'number', 'printed_total', 'set_id', 'set_name', 'series', 'release_date',
                  'rarity', 'artist', 'supertype', 'language', 'art_group_id', 'set_symbol_url',
@@ -64,9 +64,14 @@ def main():
         cards = json.loads(p.read_text(encoding='utf-8'))
         z = np.load(e)
         assert list(z['ids']) == [c['id'] for c in cards], s['id']
+        symbol_src = IMAGES_DIR / 'symbols' / (s['id'] + '.png')
+        symbol_rel = 'symbols/%s.png' % s['id'] if symbol_src.exists() else None
+        if symbol_rel and write_if_changed(BUILD_OUT / symbol_rel, symbol_src.read_bytes()):
+            changed.append(symbol_rel)
         records = []
         for c in cards:
             r = {k: c.get(k) for k in RECORD_FIELDS}
+            r['set_symbol'] = symbol_rel
             r['art_group_id'] = group_of.get(c['id'])
             r['thumb'] = thumb_rel(c) if (BUILD_OUT / thumb_rel(c)).exists() else None
             records.append(r)
