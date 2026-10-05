@@ -850,6 +850,35 @@
     refreshCards();
   }
 
+  // Keep a copy of every inventory photo (front and back) so the display case
+  // and detail view work offline. Uses the same cache and URLs sw.js serves
+  // from; only photos not already saved are fetched, three at a time.
+  var PHOTO_CACHE = 'cardlog-photos-v1';
+  function savePhotosForOffline(cards) {
+    if (!window.caches) return;
+    var urls = [];
+    cards.forEach(function (c) {
+      if (c.frontId) urls.push(thumbUrl(c.frontId));
+      if (c.backId) urls.push(thumbUrl(c.backId));
+    });
+    caches.open(PHOTO_CACHE).then(function (cache) {
+      return cache.keys().then(function (keys) {
+        var have = {};
+        keys.forEach(function (k) { have[k.url] = true; });
+        var todo = urls.filter(function (u) { return !have[u]; });
+        function next() {
+          var u = todo.shift();
+          if (!u) return Promise.resolve();
+          return fetch(u, { mode: 'no-cors', credentials: 'omit' })
+            .then(function (resp) { return cache.put(u, resp); })
+            .catch(function () {})
+            .then(next);
+        }
+        return Promise.all([next(), next(), next()]);
+      });
+    }).catch(function () {});
+  }
+
   function refreshCards() {
     var action = state.admin ? 'listAdmin' : 'list';
     var method = state.admin ? 'POST' : 'GET';
@@ -862,6 +891,7 @@
           state.online = true;
           updateSyncPill();
           renderGallery();
+          savePhotosForOffline(state.cards);
         }
       })
       .catch(function () {
@@ -953,14 +983,60 @@
   $('pw-submit').addEventListener('click', submitPassword);
   $('pw-input').addEventListener('keydown', function (e) { if (e.key === 'Enter') submitPassword(); });
 
+  // Offline sign-in: after one successful online sign-in, a salted SHA-256 of
+  // the password is kept on this device. With no signal, a password that
+  // matches it unlocks admin mode; saves queue and the server still checks
+  // the password when they upload.
+  function passwordHash(pw) {
+    try {
+      var data = new TextEncoder().encode('cardlog-offline-v1:' + pw);
+      return crypto.subtle.digest('SHA-256', data).then(function (buf) {
+        return Array.prototype.map.call(new Uint8Array(buf), function (b) { return ('0' + b.toString(16)).slice(-2); }).join('');
+      });
+    } catch (e) { return Promise.reject(e); }
+  }
+
+  function rememberPasswordHash(pw) {
+    passwordHash(pw).then(function (h) {
+      try { localStorage.setItem('cardlog.pwhash', h); } catch (e) {}
+    }).catch(function () {});
+  }
+
+  function offlineUnlock(val) {
+    var stored = null;
+    try { stored = localStorage.getItem('cardlog.pwhash'); } catch (e) {}
+    if (!stored) {
+      $('pw-error').textContent = 'No connection. Sign in once while online on this device to enable offline sign-in.';
+      $('pw-error').classList.remove('hidden');
+      state.password = '';
+      return;
+    }
+    passwordHash(val).then(function (h) {
+      if (h !== stored) {
+        $('pw-error').textContent = 'Wrong password.';
+        $('pw-error').classList.remove('hidden');
+        state.password = '';
+        return;
+      }
+      try { localStorage.setItem('cardlog.pw', val); } catch (e) {}
+      $('pw-gate').classList.remove('open');
+      $('pw-error').classList.add('hidden');
+      enterAdminMode();
+      toast('Offline: saved cards upload when you are back online');
+    });
+  }
+
   function submitPassword() {
     var val = $('pw-input').value;
     if (!val) return;
     state.password = val;
+    $('pw-error').textContent = 'Wrong password.';
+    if (!navigator.onLine) { offlineUnlock(val); return; }
     api('listAdmin', {})
       .then(function (res) {
         if (res && res.ok) {
           localStorage.setItem('cardlog.pw', val);
+          rememberPasswordHash(val);
           $('pw-gate').classList.remove('open');
           $('pw-error').classList.add('hidden');
           enterAdminMode();
@@ -969,14 +1045,12 @@
           state.password = '';
         }
       })
-      .catch(function () {
-        $('pw-error').textContent = 'Could not reach server. Check connection.';
-        $('pw-error').classList.remove('hidden');
-      });
+      .catch(function () { offlineUnlock(val); });
   }
 
   $('logout-btn').addEventListener('click', function () {
     localStorage.removeItem('cardlog.pw');
+    localStorage.removeItem('cardlog.pwhash');
     sessionStorage.removeItem('cardlog.adminSession');
     state.admin = false;
     state.password = '';
@@ -1936,6 +2010,8 @@
   // ============================================================
   function init() {
     loadSticky();
+    // A password saved before offline sign-in existed: store its hash too.
+    if (state.password && !localStorage.getItem('cardlog.pwhash')) rememberPasswordHash(state.password);
     checkAdminEntry();
     loadCards();
     ping();
