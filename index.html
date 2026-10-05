@@ -286,6 +286,7 @@
     position: fixed; inset: 0; background: var(--bg);
     z-index: 50; overflow-y: auto; display: none;
     padding-top: var(--safe-top); padding-bottom: var(--safe-bottom);
+    overscroll-behavior: contain;   /* don't drag the gallery behind it */
   }
   #detail-overlay.open { display: block; }
   .detail-topbar {
@@ -296,8 +297,10 @@
     background: none; border: none; color: var(--text);
     font-size: 22px; padding: 4px 8px;
   }
+  /* Photo capped at ~55% of the screen so name, price, price-check and the
+     admin buttons fit below it without scrolling (letterboxed, never cropped). */
   .detail-img-wrap {
-    width: 100%; aspect-ratio: 5 / 7; background: #0f0f22;
+    width: 100%; height: min(55vh, 140vw); background: #0f0f22;
     position: relative; overflow: hidden;
   }
   .detail-img-wrap img { width: 100%; height: 100%; object-fit: contain; display: block; }
