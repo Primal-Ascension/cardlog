@@ -314,8 +314,11 @@
   .detail-notes { font-size: 14px; color: var(--text); background: var(--panel); border-radius: 10px; padding: 12px; margin-bottom: 14px; }
   .detail-link { color: var(--accent); font-size: 13px; text-decoration: none; display: inline-block; margin-bottom: 14px; }
   .detail-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-  .comps-label { font-size: 11px; color: var(--muted); font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase; margin-bottom: 8px; }
-  .comp-btn { text-decoration: none; display: inline-block; }
+  /* Price with the price-check links beside it, so they're visible without scrolling */
+  .detail-price-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+  .detail-price-row .detail-price { margin-bottom: 0; }
+  .detail-comps { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+  .comp-btn { text-decoration: none; display: inline-block; padding: 9px 11px; font-size: 13px; white-space: nowrap; }
 
   /* ── Buttons ── */
   .btn {
@@ -616,11 +619,12 @@
       <div class="detail-name" id="detail-name"></div>
       <div class="detail-sub" id="detail-sub"></div>
       <div class="detail-badges" id="detail-badges"></div>
-      <div class="detail-price" id="detail-price"></div>
+      <div class="detail-price-row">
+        <div class="detail-price" id="detail-price"></div>
+        <div class="detail-comps" id="detail-comps" aria-label="Price check"></div>
+      </div>
       <div class="detail-notes hidden" id="detail-notes"></div>
       <a class="detail-link" id="detail-drive-link" href="#" target="_blank">Open original in Drive ↗</a>
-      <div class="comps-label">Price check</div>
-      <div class="detail-actions" id="detail-comps" style="margin-bottom:14px;"></div>
       <div class="detail-actions" id="detail-actions"></div>
     </div>
   </div>
