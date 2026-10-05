@@ -6,7 +6,7 @@
  * answers requests:
  *   - pages and the app's own JS: network first (so edits deploy), cache fallback
  *   - scanner/ data and scan/lib/: cache first (versioned by manifest hashes)
- *   - Drive inventory photos: saved copy first, refreshed in the background
+ *   - Drive inventory photos: saved copy if there is one (the page saves them)
  *   - other origins (Apps Script API, pokemontcg card images): untouched
  */
 'use strict';
@@ -68,10 +68,13 @@ function cacheFirst(req) {
   });
 }
 
-/* Inventory photos (Google Drive thumbnails) for the display case: show the
- * saved copy at once and refresh it in the background, so the gallery works
- * in airplane mode once each photo has been seen online. Capped by count. */
-var PHOTOS = 'cardlog-photos-v1', PHOTO_MAX = 400;
+/* Inventory photos (Google Drive thumbnails): served from the saved copy when
+ * there is one, otherwise from the network. The page fills and verifies the
+ * cache (index.html savePhotosForOffline); this worker never writes to it,
+ * because Drive responses are opaque and an error page can't be told apart
+ * from a photo here. A photo's Drive id changes when it is replaced, so a
+ * saved copy never goes stale and is never re-downloaded. */
+var PHOTOS = 'cardlog-photos-v1';
 
 function isInventoryPhoto(url) {
   return (url.hostname === 'drive.google.com' && url.pathname === '/thumbnail') ||
@@ -81,24 +84,10 @@ function isInventoryPhoto(url) {
 function photoResponse(e) {
   var req = e.request;
   return caches.open(PHOTOS).then(function (c) {
-    return c.match(req).then(function (hit) {
-      var net = fetch(req).then(function (resp) {
-        // Drive images are cross-origin, so responses are opaque (status 0).
-        if (resp.ok || resp.type === 'opaque') {
-          c.put(req, resp.clone()).then(function () { return trimPhotos(c); }).catch(function () {});
-        }
-        return resp;
-      });
-      if (hit) { e.waitUntil(net.catch(function () {})); return hit; }
-      return net;
-    });
-  });
-}
-
-function trimPhotos(c) {
-  return c.keys().then(function (keys) {
-    return Promise.all(keys.slice(0, Math.max(0, keys.length - PHOTO_MAX)).map(function (k) { return c.delete(k); }));
-  });
+    return c.match(req.url);
+  }).then(function (hit) {
+    return hit || fetch(req);
+  }).catch(function () { return fetch(req); });
 }
 
 self.addEventListener('fetch', function (e) {

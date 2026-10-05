@@ -718,12 +718,12 @@
   function qs(sel, root) { return (root || document).querySelector(sel); }
   function qsa(sel, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); }
 
-  function toast(msg) {
+  function toast(msg, ms) {
     var el = $('toast');
     el.textContent = msg;
     el.classList.add('show');
     clearTimeout(toast._t);
-    toast._t = setTimeout(function () { el.classList.remove('show'); }, 2600);
+    toast._t = setTimeout(function () { el.classList.remove('show'); }, ms || 2600);
   }
 
   function genId() {
@@ -770,11 +770,37 @@
   }
 
   // Card Ladder: slabs only. Sales History search, newest sales first.
+  function cardLadderQuery(c) {
+    return [c.name, c.number, c.set, c.grader, c.grade].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+  }
+
   function cardLadderUrl(c) {
-    var q = [c.name, c.number, c.set, c.grader, c.grade].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
     return 'https://app.cardladder.com/sales-history' +
-      '?q=' + encodeURIComponent(q) +
+      '?q=' + encodeURIComponent(cardLadderQuery(c)) +
       '&sort=date&direction=desc';
+  }
+
+  // From the home-screen app, links open in a browser panel that is not
+  // signed in to Card Ladder (and iOS won't hand them to the Card Ladder app),
+  // so for the owner the button copies the search to paste into the app.
+  function copyText(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(text).catch(function () { return copyTextFallback(text); });
+    }
+    return copyTextFallback(text);
+  }
+
+  function copyTextFallback(text) {
+    return new Promise(function (resolve, reject) {
+      var ta = document.createElement('textarea');
+      ta.value = text; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select(); ta.setSelectionRange(0, text.length);
+      var ok = false;
+      try { ok = document.execCommand('copy'); } catch (e) {}
+      document.body.removeChild(ta);
+      if (ok) resolve(); else reject(new Error('copy failed'));
+    });
   }
 
   function ebaySoldUrl(c) {
@@ -863,11 +889,24 @@
   }
 
   // Keep a copy of every inventory photo (front and back) so the display case
-  // and detail view work offline. Uses the same cache and URLs sw.js serves
-  // from; only photos not already saved are fetched, three at a time.
+  // and detail view work offline. sw.js serves photos from this cache.
+  // Drive photos come back opaque (cross-origin), so an error page looks the
+  // same as a photo; every saved copy is test-loaded as an image, and any that
+  // won't display are deleted and fetched again on a later visit.
   var PHOTO_CACHE = 'cardlog-photos-v1';
+  var photosChecked = {};   // verified this session
+
+  function imageLoads(url) {
+    return new Promise(function (resolve) {
+      var im = new Image();
+      im.onload = function () { resolve(im.naturalWidth > 0); };
+      im.onerror = function () { resolve(false); };
+      im.src = url;   // answered from the cache by sw.js
+    });
+  }
+
   function savePhotosForOffline(cards) {
-    if (!window.caches) return;
+    if (!window.caches || !navigator.serviceWorker || !navigator.serviceWorker.controller) return;
     var urls = [];
     cards.forEach(function (c) {
       if (c.frontId) urls.push(thumbUrl(c.frontId));
@@ -875,18 +914,37 @@
     });
     caches.open(PHOTO_CACHE).then(function (cache) {
       return cache.keys().then(function (keys) {
-        var have = {};
-        keys.forEach(function (k) { have[k.url] = true; });
-        var todo = urls.filter(function (u) { return !have[u]; });
+        var have = {}, wanted = {};
+        urls.forEach(function (u) { wanted[u] = true; });
+        keys.forEach(function (k) {
+          // Drop anything that isn't a current card photo: sold-and-deleted
+          // cards, replaced photos, and copies the old service worker saved.
+          if (wanted[k.url]) have[k.url] = true; else cache.delete(k);
+        });
+        var todo = urls.filter(function (u) { return !photosChecked[u]; });
         function next() {
           var u = todo.shift();
           if (!u) return Promise.resolve();
-          return fetch(u, { mode: 'no-cors', credentials: 'omit' })
-            .then(function (resp) { return cache.put(u, resp); })
-            .catch(function () {})
-            .then(next);
+          var step;
+          if (have[u]) {
+            // Saved earlier: keep it only if it still displays.
+            step = imageLoads(u).then(function (ok) {
+              if (ok) photosChecked[u] = true; else return cache.delete(u);
+            });
+          } else {
+            // Not saved: only store it once it has displayed from Google, so a
+            // rate-limit or error response is never put in the cache.
+            step = imageLoads(u).then(function (ok) {
+              if (!ok) return;
+              return fetch(u, { mode: 'no-cors', credentials: 'omit' })
+                .then(function (resp) { return cache.put(u, resp); })
+                .then(function () { return imageLoads(u); })
+                .then(function (ok2) { if (ok2) photosChecked[u] = true; else return cache.delete(u); });
+            });
+          }
+          return step.catch(function () {}).then(next);
         }
-        return Promise.all([next(), next(), next()]);
+        return Promise.all([next(), next()]);   // gentle on Google: two at a time
       });
     }).catch(function () {});
   }
@@ -1320,7 +1378,10 @@
     var fileId = state.detailShowingBack ? (c.backId || c.frontId) : c.frontId;
     var img = $('detail-img');
     img.src = fileId ? thumbUrl(fileId) : '';
-    img.onerror = function () { if (fileId) img.src = fallbackUrl(fileId); };
+    // Try the fallback host once. Without clearing onerror, a failing fallback
+    // retried itself endlessly (hundreds of requests a second until Google
+    // answered 429 Too Many Requests).
+    img.onerror = function () { img.onerror = null; if (fileId) img.src = fallbackUrl(fileId); };
     $('flip-hint').classList.toggle('hidden', !c.backId);
 
     $('detail-name').textContent = c.name || '';
@@ -1348,9 +1409,21 @@
     }
 
     var comps = [compLink('eBay Sold', ebaySoldUrl(c))];
-    if (c.cardType === 'Graded') comps.push(compLink('Card Ladder', cardLadderUrl(c)));
-    else comps.push(compLink('TCGplayer', tcgplayerUrl(c)));
+    if (c.cardType === 'Graded') {
+      comps.push(state.admin
+        ? '<button type="button" class="btn btn-ghost comp-btn" id="cl-copy">📋 Card Ladder</button>'
+        : compLink('Card Ladder', cardLadderUrl(c)));
+    } else comps.push(compLink('TCGplayer', tcgplayerUrl(c)));
     $('detail-comps').innerHTML = comps.join('');
+    var clCopy = $('cl-copy');
+    if (clCopy) clCopy.addEventListener('click', function () {
+      var q = cardLadderQuery(c);
+      copyText(q).then(function () {
+        toast('Copied "' + q + '". Open Card Ladder and paste it in search.', 4500);
+      }, function () {
+        toast('Could not copy. Search Card Ladder for: ' + q, 6000);
+      });
+    });
 
     var actions = $('detail-actions');
     if (state.admin) {
