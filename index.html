@@ -1014,16 +1014,19 @@
   }
 
   function offlineUnlock(val) {
-    var stored = null;
-    try { stored = localStorage.getItem('cardlog.pwhash'); } catch (e) {}
-    if (!stored) {
-      $('pw-error').textContent = 'No connection. Sign in once while online on this device to enable offline sign-in.';
+    var stored = null, saved = null;
+    try { stored = localStorage.getItem('cardlog.pwhash'); saved = localStorage.getItem('cardlog.pw'); } catch (e) {}
+    if (!stored && !saved) {
+      $('pw-error').textContent = 'No connection, and this app has no saved sign-in yet. Sign in once while online ' +
+        'in this same app (the home-screen icon and Safari keep separate sign-ins).';
       $('pw-error').classList.remove('hidden');
       state.password = '';
       return;
     }
-    passwordHash(val).then(function (h) {
-      if (h !== stored) {
+    // Either record proves an earlier successful online sign-in: the hash, or
+    // the password CardLog has always saved after one.
+    (stored ? passwordHash(val) : Promise.resolve(null)).then(function (h) {
+      if (stored ? h !== stored : val !== saved) {
         $('pw-error').textContent = 'Wrong password.';
         $('pw-error').classList.remove('hidden');
         state.password = '';
@@ -1987,9 +1990,12 @@
   // SETTINGS
   // ============================================================
   function renderSettings() {
-    $('settings-status').textContent = state.online
+    var offlineReady = false;
+    try { offlineReady = !!(localStorage.getItem('cardlog.pwhash') || localStorage.getItem('cardlog.pw')); } catch (e) {}
+    $('settings-status').textContent = (state.online
       ? 'Online: connected to CardLog server'
-      : 'Offline: changes cannot be saved right now';
+      : 'Offline: cards you save upload when you are back online') +
+      ' · Offline sign-in: ' + (offlineReady ? 'ready' : 'not set up (sign in once while online)');
     var sticky = STICKY_KEYS.map(function (k) {
       var v = k === 'cardType' ? state.cardType : (k === 'condition' ? state.condition : localStorage.getItem('cardlog.sticky.' + k));
       return v ? (k + ': ' + v) : null;
@@ -2049,7 +2055,7 @@
     var longPressTimer;
     $('logo').addEventListener('touchstart', function () {
       longPressTimer = setTimeout(function () {
-        if (!state.admin) $('pw-gate').classList.add('open');
+        if (!state.admin) attemptAdminEntry();   // same path as the lock button: saved sign-in skips the gate
       }, 800);
     });
     $('logo').addEventListener('touchend', function () { clearTimeout(longPressTimer); });
