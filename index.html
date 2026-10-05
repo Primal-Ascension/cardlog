@@ -2032,7 +2032,9 @@
     window.addEventListener('online', function () { state.online = true; updateSyncPill(); refreshCards(); flushOutbox(); });
     // Offline app shell + scanner data cache (see sw.js).
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('sw.js').catch(function () {});
+      // updateViaCache: 'none' makes the browser check sw.js itself without
+      // its HTTP cache, so service-worker fixes also arrive on the next open.
+      navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(function () {});
     }
     window.addEventListener('offline', function () { state.online = false; updateSyncPill(); });
 

@@ -41,7 +41,10 @@ function networkFirst(req) {
     var timer = setTimeout(function () {
       fromCache().then(function (r) { if (r && !settled) { settled = true; resolve(r); } });
     }, NETWORK_TIMEOUT_MS);
-    fetch(req).then(function (resp) {
+    // cache: 'no-cache' revalidates with GitHub Pages every time (a cheap 304
+    // when nothing changed), so a push shows on the next open instead of
+    // after Pages' 10-minute browser cache expires.
+    fetch(req.url, { cache: 'no-cache', credentials: 'same-origin' }).then(function (resp) {
       if (resp.ok) {
         var copy = resp.clone();
         caches.open(SHELL).then(function (c) { c.put(req, copy); });
