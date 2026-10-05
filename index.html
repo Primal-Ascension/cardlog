@@ -335,7 +335,11 @@
     padding-bottom: var(--safe-bottom);
     z-index: 30;
   }
-  #tabbar.show { display: flex; }
+  #tabbar.show { display: flex; flex-direction: column; }
+  .tab-row { display: flex; }
+  /* Save bar: docked on top of the tab bar, shown on the Add tab only */
+  #save-bar { padding: 10px 16px; border-bottom: 1px solid var(--border); }
+  #main.with-save-bar { padding-bottom: calc(150px + var(--safe-bottom)); }
   .tab-btn {
     flex: 1; background: none; border: none; color: var(--muted);
     padding: 12px 4px; font-size: 12px; font-weight: 700;
@@ -384,7 +388,6 @@
   .cond-chip.active.MP { background: var(--yellow); color: #0a0a1a; border-color: var(--yellow); }
   .cond-chip.active.HP { background: var(--orange); color: #fff; border-color: var(--orange); }
   .cond-chip.active.DMG { background: var(--red); color: #fff; border-color: var(--red); }
-  .form-actions { position: sticky; bottom: 76px; padding-top: 6px; }
   .inline-error { color: var(--red); font-size: 12px; margin-top: 4px; }
   .banner { background: rgba(230,57,70,.15); border: 1px solid var(--red); color: #ffb3b8; border-radius: 10px; padding: 12px; margin-bottom: 14px; font-size: 13px; }
   .banner-ok { background: rgba(46,204,113,.15); border: 1px solid var(--green); color: #b6f0cd; }
@@ -571,9 +574,6 @@
         <label>Notes</label>
         <input id="f-notes" placeholder="e.g. PSA 9, signed, bundle…">
       </div>
-      <div class="form-actions">
-        <button id="save-card-btn" class="btn btn-primary btn-block">💾 Save Card</button>
-      </div>
     </div>
 
     <div id="view-settings" class="hidden">
@@ -592,9 +592,14 @@
   </div>
 
   <div id="tabbar">
-    <button class="tab-btn" data-tab="add"><span class="icon">➕</span>Add</button>
-    <button class="tab-btn" data-tab="gallery"><span class="icon">📦</span>Cards</button>
-    <button class="tab-btn" data-tab="settings"><span class="icon">⚙</span>Settings</button>
+    <div id="save-bar" class="hidden">
+      <button id="save-card-btn" class="btn btn-primary btn-block">💾 Save Card</button>
+    </div>
+    <div class="tab-row">
+      <button class="tab-btn" data-tab="add"><span class="icon">➕</span>Add</button>
+      <button class="tab-btn" data-tab="gallery"><span class="icon">📦</span>Cards</button>
+      <button class="tab-btn" data-tab="settings"><span class="icon">⚙</span>Settings</button>
+    </div>
   </div>
 
   <!-- Detail overlay -->
@@ -933,6 +938,8 @@
     $('view-add').classList.toggle('hidden', tab !== 'add');
     $('view-gallery').classList.toggle('hidden', tab !== 'gallery');
     $('view-settings').classList.toggle('hidden', tab !== 'settings');
+    $('save-bar').classList.toggle('hidden', tab !== 'add');
+    $('main').classList.toggle('with-save-bar', tab === 'add');
     qsa('.tab-btn').forEach(function (b) {
       b.classList.toggle('active', b.dataset.tab === tab);
     });
