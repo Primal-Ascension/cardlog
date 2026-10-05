@@ -6,7 +6,8 @@
  * answers requests:
  *   - pages and the app's own JS: network first (so edits deploy), cache fallback
  *   - scanner/ data and scan/lib/: cache first (versioned by manifest hashes)
- *   - other origins (Apps Script API, Drive photos, card images): untouched
+ *   - Drive inventory photos: saved copy first, refreshed in the background
+ *   - other origins (Apps Script API, pokemontcg card images): untouched
  */
 'use strict';
 
@@ -64,11 +65,45 @@ function cacheFirst(req) {
   });
 }
 
+/* Inventory photos (Google Drive thumbnails) for the display case: show the
+ * saved copy at once and refresh it in the background, so the gallery works
+ * in airplane mode once each photo has been seen online. Capped by count. */
+var PHOTOS = 'cardlog-photos-v1', PHOTO_MAX = 400;
+
+function isInventoryPhoto(url) {
+  return (url.hostname === 'drive.google.com' && url.pathname === '/thumbnail') ||
+         /(^|\.)googleusercontent\.com$/.test(url.hostname);
+}
+
+function photoResponse(e) {
+  var req = e.request;
+  return caches.open(PHOTOS).then(function (c) {
+    return c.match(req).then(function (hit) {
+      var net = fetch(req).then(function (resp) {
+        // Drive images are cross-origin, so responses are opaque (status 0).
+        if (resp.ok || resp.type === 'opaque') {
+          c.put(req, resp.clone()).then(function () { return trimPhotos(c); }).catch(function () {});
+        }
+        return resp;
+      });
+      if (hit) { e.waitUntil(net.catch(function () {})); return hit; }
+      return net;
+    });
+  });
+}
+
+function trimPhotos(c) {
+  return c.keys().then(function (keys) {
+    return Promise.all(keys.slice(0, Math.max(0, keys.length - PHOTO_MAX)).map(function (k) { return c.delete(k); }));
+  });
+}
+
 self.addEventListener('fetch', function (e) {
   var req = e.request;
   if (req.method !== 'GET') return;
   var url = new URL(req.url);
-  if (url.origin !== self.location.origin) return;             // API, Drive, card images: browser default
+  if (isInventoryPhoto(url)) { e.respondWith(photoResponse(e)); return; }
+  if (url.origin !== self.location.origin) return;             // Apps Script API, card images: browser default
   var scope = new URL(self.registration.scope);
   var path = url.pathname.slice(scope.pathname.length);
   if (path.indexOf('scanner/') === 0 || path.indexOf('scan/lib/') === 0) {

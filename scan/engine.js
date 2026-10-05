@@ -204,11 +204,46 @@
   }
 
   var engine = null;
+  var CPU_KEY = 'cardlog.scan.cpuOnly';
+  var GPU_WARMUP_MS = 60000, GPU_RUN_MS = 20000, CPU_RUN_MS = 60000;
+
+  function cpuOnly() { try { return localStorage.getItem(CPU_KEY) === '1'; } catch (e) { return false; } }
+  function setCpuOnly(v) { try { if (v) localStorage.setItem(CPU_KEY, '1'); else localStorage.removeItem(CPU_KEY); } catch (e) {} }
+
+  function withTimeout(p, ms, what) {
+    return new Promise(function (resolve, reject) {
+      var t = setTimeout(function () { reject(new Error(what + ' timed out after ' + Math.round(ms / 1000) + ' s')); }, ms);
+      p.then(function (v) { clearTimeout(t); resolve(v); }, function (e) { clearTimeout(t); reject(e); });
+    });
+  }
+
+  /* Create a session on one backend and prove it works with a warm-up run. */
+  function createSession(E, ep) {
+    var ort = E.ort, s = E.enc.input_size;
+    return getBytes(E.cache, DATA + E.enc.file).then(function (buf) {
+      return withTimeout(ort.InferenceSession.create(new Uint8Array(buf), {
+        executionProviders: [ep], graphOptimizationLevel: 'all'
+      }), ep === 'webgpu' ? GPU_WARMUP_MS : CPU_RUN_MS * 2, 'model load');
+    }).then(function (session) {
+      var x = new ort.Tensor('float32', new Float32Array(3 * s * s), [1, 3, s, s]);
+      return withTimeout(session.run({ pixel_values: x }), ep === 'webgpu' ? GPU_WARMUP_MS : CPU_RUN_MS * 2, 'model warm-up')
+        .then(function () { E.session = session; E.backend = ep; });
+    });
+  }
 
   /* Load everything needed to scan. onStep(text) reports progress. */
+  var loading = null, stepListeners = [];
   function load(onStep) {
     if (engine) return Promise.resolve(engine);
-    onStep = onStep || function () {};
+    if (onStep) stepListeners.push(onStep);
+    if (loading) return loading;           // preload already running: share it
+    loading = loadOnce(function (t) { stepListeners.forEach(function (f) { try { f(t); } catch (e) {} }); })
+      .then(function (E) { stepListeners = []; return E; },
+            function (e) { loading = null; stepListeners = []; throw e; });
+    return loading;
+  }
+
+  function loadOnce(onStep) {
     var t0 = performance.now(), E = { timings: {} };
     return openCache().then(function (cache) {
       E.cache = cache;
@@ -227,19 +262,24 @@
       ort.env.wasm.numThreads = 1;   // Pages cannot send the headers threads need
       ort.env.logLevel = 'error';    // ORT prints harmless graph-optimizer warnings otherwise
       onStep('Loading model');
-      return getBytes(E.cache, DATA + E.enc.file).then(function (buf) {
-        var model = new Uint8Array(buf);
-        var tries = (navigator.gpu ? [['webgpu'], ['wasm']] : [['wasm']]);
-        function attempt(i) {
-          return ort.InferenceSession.create(model, { executionProviders: tries[i], graphOptimizationLevel: 'all' })
-            .then(function (s) { E.session = s; E.backend = tries[i][0]; })
-            .catch(function (e) {
-              if (i + 1 < tries.length) return attempt(i + 1);
-              throw e;
-            });
-        }
-        return attempt(0);
-      });
+      // GPU first unless it has failed on this device before. Each backend gets
+      // a warm-up run with a timeout: a phone GPU can spend a long time
+      // compiling shaders on its first run, or hang outright, and that must
+      // happen here (visible as "Preparing model") rather than during a scan.
+      var order = navigator.gpu && !cpuOnly() ? ['webgpu', 'wasm'] : ['wasm'];
+      function attempt(i) {
+        var ep = order[i], t0 = performance.now();
+        onStep(ep === 'webgpu' ? 'Preparing model on GPU (first time on this phone can take a minute)' : 'Preparing model');
+        return createSession(E, ep).then(function () {
+          E.timings.warmup = performance.now() - t0;
+        }).catch(function (e) {
+          E.gpuError = String(e && e.message || e);
+          if (ep === 'webgpu') setCpuOnly(true);
+          if (i + 1 < order.length) return attempt(i + 1);
+          throw e;
+        });
+      }
+      return attempt(0);
     }).then(function () {
       E.timings.model = performance.now() - t0;
       onStep('Loading catalog');
@@ -295,7 +335,17 @@
     var s = E.enc.input_size, per = 3 * s * s, data = new Float32Array(cards.length * per);
     cards.forEach(function (c, i) { preprocess(E, c, data, i * per); });
     var feeds = { pixel_values: new E.ort.Tensor('float32', data, [cards.length, 3, s, s]) };
-    return E.session.run(feeds).then(function (out) {
+    function run() {
+      return withTimeout(E.session.run(feeds), E.backend === 'webgpu' ? GPU_RUN_MS : CPU_RUN_MS, 'card reading');
+    }
+    // A GPU that stalls or errors mid-session: switch to CPU for good and retry.
+    return run().catch(function (err) {
+      if (E.backend !== 'webgpu') throw err;
+      E.gpuError = String(err && err.message || err);
+      setCpuOnly(true);
+      if (E.onBackendChange) E.onBackendChange('wasm');
+      return createSession(E, 'wasm').then(run);
+    }).then(function (out) {
       var v = out.embedding.data, res = [];
       for (var i = 0; i < cards.length; i++) {
         var vec = new Float32Array(E.dim), norm = 0;
@@ -355,6 +405,7 @@
     status: status, sync: sync, load: load, embed: embed, match: match, search: search,
     abs: abs, DATA: DATA,
     setPaused: function (p) { paused = !!p; },
+    cpuOnly: cpuOnly, setCpuOnly: setCpuOnly,
     setBase: function (url) { BASE = new URL(url, global.location.href).href; }   // test pages only
   };
 })(window);

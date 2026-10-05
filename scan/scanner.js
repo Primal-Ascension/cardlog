@@ -185,7 +185,7 @@
     root.className = 'scan-ui';
     root.innerHTML =
       '<div class="scan-top"><button class="scan-x" data-act="close" aria-label="Close">✕</button>' +
-      '<div class="scan-title">Scan card</div><div class="scan-badge" data-el="badge"></div></div>' +
+      '<div class="scan-title">Scan card</div><button class="scan-badge" data-act="badge" data-el="badge" style="background:none;border:1px solid #444;border-radius:6px;padding:3px 7px;color:#aaa"></button></div>' +
       '<div class="scan-stage"><video playsinline muted autoplay></video><canvas class="scan-overlay"></canvas>' +
       '<div class="scan-hint" data-el="hint">Starting…</div></div>' +
       '<div class="scan-bottom"><button class="scan-side" data-act="search">🔍 Search</button>' +
@@ -199,6 +199,7 @@
       if (a === 'close') close();
       else if (a === 'shoot') capture('manual');
       else if (a === 'search') openSearch();
+      else if (a === 'badge') toggleBackend();
     });
     $('[data-el=file]', root).addEventListener('change', function (e) {
       var f = e.target.files[0];
@@ -209,6 +210,16 @@
   }
 
   function hint(t) { if (ui) $('[data-el=hint]', ui).textContent = t; }
+
+  /* Tap the GPU/CPU badge to flip this phone's preference. Takes effect the
+   * next time the page loads, since a running model can't change backend. */
+  function toggleBackend() {
+    var SE = global.ScanEngine;
+    if (!SE) return;
+    var nowCpu = !SE.cpuOnly();
+    SE.setCpuOnly(nowCpu);
+    hint((nowCpu ? 'CPU' : 'GPU') + ' mode saved. Close CardLog fully and reopen to apply.');
+  }
 
   function showMessage(html) {
     var stage = $('.scan-stage', ui), m = $('.scan-msg', stage);
@@ -378,21 +389,40 @@
     img.src = url;
   }
 
+  function backendName() { return E && E.backend === 'webgpu' ? 'GPU' : 'CPU'; }
+
   function processCanvas(canvas, how, hintQuad) {
     busy = true;
-    hint('Identifying…');
-    var cv = E.cv, t0 = performance.now(), src = cv.imread(canvas), quad = null;
+    var t0 = performance.now(), stage = 'Finding card';
+    // Live progress with elapsed seconds, so a stall shows exactly where it is.
+    function tick() { hint(stage + '… ' + Math.round((performance.now() - t0) / 1000) + ' s'); }
+    tick();
+    var ticker = setInterval(tick, 500);
+    E.onBackendChange = function () {
+      stage = 'GPU too slow, switching to CPU';
+      tick();
+      if (ui) $('[data-el=badge]', ui).textContent = 'CPU';
+    };
+    // Let the hint paint before the synchronous OpenCV work starts.
+    setTimeout(function () { processCanvasNow(canvas, how, hintQuad, t0, ticker, function (s) { stage = s; tick(); }); }, 30);
+  }
+
+  function processCanvasNow(canvas, how, hintQuad, t0, ticker, setStage) {
+    var cv = E.cv, src = cv.imread(canvas), quad = null;
     try { quad = global.CardDetect.findCardQuad(cv, src, 1000); } catch (e) { quad = null; }
     if (!quad && hintQuad) quad = hintQuad;
     var card = quad ? global.CardDetect.warpCard(cv, src, quad) : global.CardDetect.fallbackCard(cv, src);
     var photoBlobP = makePhoto(cv, src, quad);
     var tDetect = performance.now() - t0;
+    setStage('Reading card (' + backendName() + ')');
     global.ScanEngine.embed(E, [card]).then(function (q1) {
+      setStage('Matching');
       var top = global.ScanEngine.match(E, q1, 5);
       if (top[0].score >= CONFIDENT) return { top: top, rotated: false };
       // Low score: maybe the card is upside down. Embed it rotated and keep the better.
       var rot = new cv.Mat();
       cv.rotate(card, rot, cv.ROTATE_180);
+      setStage('Checking upside down (' + backendName() + ')');
       return global.ScanEngine.embed(E, [rot]).then(function (q2) {
         rot.delete();
         return { top: global.ScanEngine.match(E, [q1[0], q2[0]], 5), rotated: true };
@@ -401,10 +431,12 @@
       card.delete(); src.delete();
       var ms = performance.now() - t0;
       return photoBlobP.then(function (blob) {
+        clearInterval(ticker);
         busy = false;
         showResult({ top: r.top, ms: ms, detectMs: tDetect, detected: !!quad, how: how, rotated: r.rotated, photoBlob: blob });
       });
     }).catch(function (e) {
+      clearInterval(ticker);
       try { card.delete(); src.delete(); } catch (x) {}
       busy = false;
       hint('Scan failed: ' + (e.message || e));
@@ -547,7 +579,9 @@
       html += '</div>';
     }
     html += '<div class="scan-debug">' + Math.round(res.ms) + ' ms · ' + (res.detected ? 'card outline found' : 'no outline, used whole frame') +
-      (res.rotated ? ' · checked upside down' : '') + ' · ' + E.backend + '</div>';
+      (res.rotated ? ' · checked upside down' : '') + ' · ' + E.backend +
+      (E.timings.warmup ? ' · model ready in ' + (E.timings.warmup / 1000).toFixed(1) + ' s' : '') +
+      (E.gpuError ? ' · GPU problem: ' + esc(E.gpuError.slice(0, 120)) : '') + '</div>';
     s.innerHTML = html;
     wireSheet(s);
   }
