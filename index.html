@@ -1972,11 +1972,15 @@
     $('f-variant').value = '';
     if (res.printing) setVariant(res.printing.label);
     $('f-language').value = 'English';
-    setScanMatch({ id: r.id, text: 'Scanned: ' + r.name + ' · ' + setName + ' ' + number + (res.printing ? ' · ' + res.printing.label : '') });
+    // Slab detected (or Graded picked in the popup): Graded shows the grader,
+    // grade and cert fields; those stay manual until label reading exists.
+    setCardType(res.graded ? 'Graded' : 'Raw');
+    setScanMatch({ id: r.id, text: 'Scanned: ' + r.name + ' · ' + setName + ' ' + number +
+      (res.printing ? ' · ' + res.printing.label : '') + (res.graded ? ' · Graded' : '') });
     // Use the straightened scan as the front photo unless one was already taken.
     if (res.photoBlob && !state.frontBlob && !state.editingId) setFrontPhoto(res.photoBlob);
     $('name-error').classList.add('hidden');
-    $('f-price').focus();
+    if (res.graded) $('f-grader').focus(); else $('f-price').focus();
   }
 
   // ============================================================

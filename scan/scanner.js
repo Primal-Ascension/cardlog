@@ -408,11 +408,15 @@
   }
 
   function processCanvasNow(canvas, how, hintQuad, t0, ticker, setStage) {
-    var cv = E.cv, src = cv.imread(canvas), quad = null;
-    try { quad = global.CardDetect.findCardQuad(cv, src, 1000); } catch (e) { quad = null; }
+    var cv = E.cv, src = cv.imread(canvas), quad = null, slab = null, slabKind = null;
+    try {
+      var found = global.CardDetect.findCardAndSlab(cv, src, 1000, true);
+      quad = found.card; slab = found.slab; slabKind = found.slabKind;
+    } catch (e) { quad = null; }
     if (!quad && hintQuad) quad = hintQuad;
     var card = quad ? global.CardDetect.warpCard(cv, src, quad) : global.CardDetect.fallbackCard(cv, src);
-    var photoBlobP = makePhoto(cv, src, quad);
+    var slabQuad = quad && slab ? global.CardDetect.slabPhotoQuad(quad, slab, slabKind) : null;
+    var photoBlobP = makePhotos(cv, src, quad, slabQuad);
     var tDetect = performance.now() - t0;
     setStage('Reading card (' + backendName() + ')');
     global.ScanEngine.embed(E, [card]).then(function (q1) {
@@ -430,10 +434,11 @@
     }).then(function (r) {
       card.delete(); src.delete();
       var ms = performance.now() - t0;
-      return photoBlobP.then(function (blob) {
+      return photoBlobP.then(function (photos) {
         clearInterval(ticker);
         busy = false;
-        showResult({ top: r.top, ms: ms, detectMs: tDetect, detected: !!quad, how: how, rotated: r.rotated, photoBlob: blob });
+        showResult({ top: r.top, ms: ms, detectMs: tDetect, detected: !!quad, how: how, rotated: r.rotated,
+                     photos: photos, slabKind: slabQuad ? slabKind : null });
       });
     }).catch(function (e) {
       clearInterval(ticker);
@@ -443,17 +448,30 @@
     });
   }
 
-  /* Straightened, higher-resolution JPEG of the card for CardLog's front photo. */
-  function makePhoto(cv, src, quad) {
-    var mat = quad ? global.CardDetect.warpCard(cv, src, quad, 1000, 1397) : null;
-    var c = document.createElement('canvas');
-    if (mat) { cv.imshow(c, mat); mat.delete(); }
-    else {
+  /* Front photos for CardLog: { raw, graded } JPEG blobs.
+   *   raw     the straightened card (or the whole frame if no card was found)
+   *   graded  the straightened slab, label included (or the whole frame)
+   * Both are made at capture so the popup's Raw/Graded switch is instant. */
+  function makePhotos(cv, src, quad, slabQuad) {
+    function toBlob(mat) {
+      var c = document.createElement('canvas');
+      cv.imshow(c, mat); mat.delete();
+      return new Promise(function (res) { c.toBlob(function (b) { res(b); }, 'image/jpeg', 0.88); });
+    }
+    function frame() {
       var s = Math.min(1, 1600 / Math.max(src.cols, src.rows)), tmp = new cv.Mat();
       cv.resize(src, tmp, new cv.Size(Math.round(src.cols * s), Math.round(src.rows * s)), 0, 0, cv.INTER_AREA);
-      cv.imshow(c, tmp); tmp.delete();
+      return tmp;
     }
-    return new Promise(function (res) { c.toBlob(function (b) { res(b); }, 'image/jpeg', 0.88); });
+    var raw = quad ? global.CardDetect.warpCard(cv, src, quad, 1000, 1397) : frame();
+    var graded;
+    if (slabQuad) {
+      var sz = global.CardDetect.quadSize(slabQuad);
+      graded = global.CardDetect.warpCard(cv, src, slabQuad, 1000, Math.round(1000 * sz.h / sz.w));
+    } else {
+      graded = frame();
+    }
+    return Promise.all([toBlob(raw), toBlob(graded)]).then(function (b) { return { raw: b[0], graded: b[1] }; });
   }
 
   /* ---------------- popup ---------------- */
@@ -504,7 +522,8 @@
       res: res, reps: reps, top: res.top,
       confident: res.top[0].score >= CONFIDENT,
       selected: reps[0],                 // oldest printing of the art is the default
-      defaultSel: reps[0], printingIdx: null, defaultPrinting: null, mode: 'main'
+      defaultSel: reps[0], printingIdx: null, defaultPrinting: null, mode: 'main',
+      graded: !!res.slabKind, gradedDefault: !!res.slabKind   // slab or grading label seen around the card
     };
     var p = printings(view.selected);
     view.printingIdx = view.defaultPrinting = p ? p.default : null;
@@ -566,6 +585,9 @@
       });
       html += '</div>';
     }
+    html += '<div class="scan-label">Type' + (view.gradedDefault ? ' · slab detected' : '') + '</div><div class="scan-chips">' +
+      '<button class="scan-chip' + (!view.graded ? ' sel' : '') + '" data-type="raw">Raw</button>' +
+      '<button class="scan-chip' + (view.graded ? ' sel' : '') + '" data-type="graded">Graded</button></div>';
     html += '<div class="scan-actions"><button class="scan-again" data-act2="again">Rescan</button><button class="scan-ok" data-act2="ok">Confirm</button></div>';
     html += '<button class="scan-more" data-act2="more">' + (view.showTop ? 'Hide' : 'Not it?') + ' Top 5 matches</button>';
     if (view.showTop) {
@@ -588,9 +610,10 @@
 
   function wireSheet(s) {
     s.onclick = function (e) {
-      var t = e.target.closest('[data-rep],[data-chip],[data-act2],[data-top]');
+      var t = e.target.closest('[data-rep],[data-chip],[data-act2],[data-top],[data-type]');
       if (!t) return;
-      if (t.dataset.rep) { selectCard(+t.dataset.rep, false); }
+      if (t.dataset.type) { view.graded = t.dataset.type === 'graded'; renderSheet(); }
+      else if (t.dataset.rep) { selectCard(+t.dataset.rep, false); }
       else if (t.dataset.chip) { view.printingIdx = +t.dataset.chip; renderSheet(); }
       else if (t.dataset.top) { selectCard(+t.dataset.top, true); }
       else if (t.dataset.act2 === 'more') { view.showTop = !view.showTop; renderSheet(); }
@@ -642,7 +665,9 @@
     var c = chosenRecord(), r = c.record, chip = c.chip;
     var printing = chip ? { code: chip.code, label: PRINTING_LABELS[chip.code] || chip.label } : null;
     logScan(r, printing);
-    var result = { record: r, printing: printing, photoBlob: view.res.photoBlob || null };
+    var photos = view.res.photos || {};
+    var result = { record: r, printing: printing, graded: !!view.graded,
+                   photoBlob: (view.graded ? photos.graded : photos.raw) || null };
     close();
     if (opts && opts.onConfirm) opts.onConfirm(result);
   }
@@ -655,7 +680,8 @@
         top: (view.top || []).map(function (t) { return [recOf(t.i).id, Math.round(t.score * 1000) / 1000]; }),
         chosen: r.id, printing: printing && printing.code,
         keptDefault: view.selected === view.defaultSel && view.printingIdx === view.defaultPrinting && !view.manual,
-        ms: Math.round(view.res.ms || 0), detected: !!view.res.detected, how: view.res.how, backend: E.backend
+        ms: Math.round(view.res.ms || 0), detected: !!view.res.detected, how: view.res.how, backend: E.backend,
+        slab: view.res.slabKind || null, graded: !!view.graded
       });
       while (log.length > LOG_MAX) log.shift();
       lsSet(LOG_KEY, JSON.stringify(log));

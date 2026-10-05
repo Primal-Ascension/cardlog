@@ -48,6 +48,7 @@ def _quad_aspect(q):
 
 MIN_AREA_FRAC = 0.03     # card must fill at least 3% of the frame (slabs shrink it)
 MIN_EDGE_SUPPORT = 0.70  # share of the quad's perimeter that must lie on real edges
+NESTED_EDGE_SUPPORT = 0.60  # lower bar for a card found inside a slab outline
 
 
 def _yellow_mask(rgb):
@@ -123,13 +124,21 @@ def _hull_quad(c):
     return None
 
 
-def find_card_quad(rgb_np):
-    """Largest card-proportioned quad backed by real edges, in original pixel coords.
+def _inside(inner, outer, tol):
+    """All corners of inner within outer (grown by tol pixels)."""
+    c = outer.reshape(-1, 1, 2).astype(np.float32)
+    return all(cv2.pointPolygonTest(c, (float(x), float(y)), True) >= -tol for x, y in inner)
 
-    Requiring the 63:88 aspect is what keeps a slab or top-loader outline
-    from winning over the card inside it. Requiring portrait orientation keeps
-    the art window out: turned sideways it has almost exactly card proportions
-    (52 x 38 mm, 0.72). The phone is held upright, so a real card is tall.
+
+def find_card_and_slab(rgb_np):
+    """-> (card quad, slab quad or None), in original pixel coords.
+
+    Card: the largest card-proportioned quad backed by real edges. Requiring
+    the 63:88 aspect keeps most outlines out; requiring portrait keeps the
+    art window out (turned sideways it is almost exactly card-shaped).
+    A slab is narrower than a card (about 0.62 vs 0.72) but still inside the
+    aspect tolerance, so when the winning quad contains a smaller, more
+    card-shaped quad, the outer one is the slab and the inner one the card.
     """
     h, w = rgb_np.shape[:2]
     scale = 1000.0 / max(h, w) if max(h, w) > 1000 else 1.0
@@ -137,27 +146,48 @@ def find_card_quad(rgb_np):
     gray = cv2.cvtColor(small, cv2.COLOR_RGB2GRAY)
     min_area = MIN_AREA_FRAC * gray.shape[0] * gray.shape[1]
 
-    best, best_area = None, 0
+    cands = []   # (area, aspect, quad, edge support)
     for edges in _edge_maps(small, gray):
         if not edges.any():
             continue
         support_map = cv2.dilate(edges, np.ones((5, 5), np.uint8))
         contours, _ = cv2.findContours(edges, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
         for c in contours:
-            if cv2.contourArea(cv2.convexHull(c)) < max(min_area, best_area):
+            if cv2.contourArea(cv2.convexHull(c)) < min_area:
                 continue
             quad = _hull_quad(c)
             if quad is None:
                 continue
-            area = cv2.contourArea(quad)
             qw, qh = _quad_aspect(quad)
-            if area <= best_area or qw > qh or abs(qw / qh - CARD_ASPECT) > ASPECT_TOL:
+            if qw > qh or abs(qw / qh - CARD_ASPECT) > ASPECT_TOL:
                 continue
             if not _is_rectangular(quad) or _is_frame(quad, gray.shape):
                 continue
-            if _edge_support(support_map, quad) >= MIN_EDGE_SUPPORT:
-                best, best_area = quad, area
-    return None if best is None else best / scale
+            sup = _edge_support(support_map, quad)
+            if sup >= NESTED_EDGE_SUPPORT:
+                cands.append((cv2.contourArea(quad), qw / qh, quad, sup))
+    winners = [c for c in cands if c[3] >= MIN_EDGE_SUPPORT]
+    if not winners:
+        return None, None
+    area, aspect, best, _ = max(winners, key=lambda t: t[0])
+    slab = None
+    # Slab check: a smaller card-shaped quad inside it, sitting low, with more
+    # room above (the grading label) than below. A raw card has no portrait
+    # quad of that size inside it; its art window and text box are landscape.
+    bx0, by0, bx1, by1 = best[:, 0].min(), best[:, 1].min(), best[:, 0].max(), best[:, 1].max()
+    bh = by1 - by0
+    for a2, asp2, q2, _ in sorted(cands, key=lambda t: -t[0]):
+        if not (0.30 * area <= a2 <= 0.85 * area) or not _inside(q2, best, 0.03 * np.sqrt(area)):
+            continue
+        top_gap, bottom_gap = q2[:, 1].min() - by0, by1 - q2[:, 1].max()
+        if top_gap >= 0.10 * bh and top_gap > 1.5 * bottom_gap:
+            slab, best = best, q2
+            break
+    return best / scale, (None if slab is None else slab / scale)
+
+
+def find_card_quad(rgb_np):
+    return find_card_and_slab(rgb_np)[0]
 
 
 def warp_card(rgb_np, quad):
