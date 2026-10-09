@@ -438,6 +438,13 @@
   @keyframes spin { to { transform: rotate(360deg); } }
 
   .cache-pill { text-align: center; font-size: 12px; color: var(--muted); padding: 8px; background: var(--panel); border-radius: 8px; margin-bottom: 12px; }
+  /* ── Grader logo badges ── */
+  .grader-badge { display: inline-flex; align-items: center; gap: 4px; border: 1px solid rgba(255,255,255,.25); }
+  .grader-badge img { height: 12px; width: auto; display: block; }
+  .badge.grader-badge { padding: 2px 6px; font-size: 11px; }
+  .case-cond-tag.grader-badge { padding: 1px 4px; gap: 3px; font-size: 9px; }
+  .case-cond-tag.grader-badge img { height: 9px; }
+
   /* ── Scanner hookup ── */
   .scan-match {
     display: flex; align-items: center; gap: 8px; margin-top: 8px;
@@ -554,7 +561,6 @@
         <select id="f-grader">
           <option value="">-</option>
           <option>PSA</option><option>BGS</option><option>CGC</option><option>TAG</option>
-          <option>AGS</option><option>ARS</option><option>PCG</option><option>SGC</option><option>Other</option>
         </select>
         <label style="margin-top:10px">Grade</label>
         <input id="f-grade" placeholder="e.g. 10, 9.5, A">
@@ -1160,8 +1166,27 @@
     renderGallery();
   });
 
+  // Official grader logos (from each company's own website), each on the
+  // background it was designed for. Graders without one keep the text badge.
+  var GRADER_LOGOS = {
+    PSA: { src: 'img/graders/psa.svg', bg: '#fff', fg: '#111' },
+    CGC: { src: 'img/graders/cgc.svg', bg: '#000', fg: '#fff' },
+    TAG: { src: 'img/graders/tag.png', bg: '#fff', fg: '#111' },
+    BGS: { src: 'img/graders/bgs.svg', bg: '#000', fg: '#fff' }
+  };
+
+  function graderBadge(card, cls) {
+    var logo = GRADER_LOGOS[(card.grader || '').toUpperCase()];
+    if (!logo) return '';
+    return '<span class="' + cls + ' grader-badge" style="background:' + logo.bg + ';color:' + logo.fg + '">' +
+      '<img src="' + logo.src + '" alt="' + esc(card.grader) + '">' +
+      (card.grade ? '<span>' + esc(card.grade) + '</span>' : '') + '</span>';
+  }
+
   function conditionBadge(card) {
     if (card.cardType === 'Graded') {
+      var withLogo = graderBadge(card, 'badge');
+      if (withLogo) return withLogo;
       var g = (card.grader || '') + ' ' + (card.grade || '');
       return '<span class="badge graded">' + esc(g.trim()) + '</span>';
     }
@@ -1173,6 +1198,8 @@
 
   function caseCondTag(c) {
     if (c.cardType === 'Graded') {
+      var withLogo = graderBadge(c, 'case-cond-tag');
+      if (withLogo) return withLogo;
       var g = ((c.grader || '') + ' ' + (c.grade || '')).trim();
       return g ? '<span class="case-cond-tag graded">' + esc(g) + '</span>' : '';
     }
@@ -1771,6 +1798,11 @@
     $('f-variant').value = c.variant || '';
     setCardType(c.cardType === 'Graded' ? 'Graded' : 'Raw');
     setCondition(c.condition || 'NM');
+    // Only PSA/BGS/CGC/TAG are offered; an older card with another grader
+    // keeps it instead of silently losing it on save.
+    if (c.grader && !Array.prototype.some.call($('f-grader').options, function (o) { return o.text === c.grader; })) {
+      var go = document.createElement('option'); go.text = c.grader; $('f-grader').add(go);
+    }
     $('f-grader').value = c.grader || '';
     $('f-grade').value = c.grade || '';
     $('f-cert').value = c.cert || '';
