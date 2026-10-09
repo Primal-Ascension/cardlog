@@ -458,7 +458,19 @@
   .trade-opts label { display: flex; align-items: center; gap: 4px; }
   .trade-opts input { width: 70px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 7px; color: var(--text); text-align: right; }
   #trade-bar { padding: 10px 16px; border-bottom: 1px solid var(--border); font-size: 13px; }
-  #main.with-trade-bar { padding-bottom: calc(250px + var(--safe-bottom)); }
+  #main.with-trade-bar { padding-bottom: calc(300px + var(--safe-bottom)); }
+  .trade-actions { display: flex; gap: 8px; margin-bottom: 10px; }
+  .trade-actions .btn { flex: 1; }
+  .tb-profit { margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--border); }
+  .tb-profit b.up { color: var(--green); } .tb-profit b.down { color: var(--red); }
+  .tc-section { font-size: 12px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; margin: 12px 0 6px; }
+  .tc-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .tc-row .tc-name { flex: 1; min-width: 0; }
+  .tc-row .tc-name span { display: block; font-size: 11px; color: var(--muted); }
+  .tc-row input[type=text], .tc-row input:not([type]) { width: 80px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 7px; color: var(--text); text-align: right; }
+  .tc-photo { position: relative; overflow: hidden; font-size: 11px; padding: 6px 8px; }
+  .tc-photo input { position: absolute; inset: 0; opacity: 0; }
+  .tc-need { color: var(--orange); }
   .trade-item .ti-ph { width: 36px; height: 50px; border-radius: 4px; background: #0f0f22; flex: 0 0 auto;
     display: flex; align-items: center; justify-content: center; font-size: 18px; }
   .tb-row { display: flex; justify-content: space-between; color: var(--muted); }
@@ -647,6 +659,10 @@
           <label>Cash they add <span>$</span><input id="get-cash" inputmode="decimal" placeholder="0"></label>
           <label>Count at <input id="get-pct" inputmode="numeric" value="100"><span>%</span></label>
         </div>
+      </div>
+      <div class="trade-actions">
+        <button type="button" id="trade-profit" class="btn btn-ghost">💲 Show my profit</button>
+        <button type="button" id="trade-complete" class="btn btn-primary">✅ Complete trade</button>
       </div>
       <button type="button" id="trade-reset" class="btn btn-ghost btn-block">Start a new trade</button>
     </div>
@@ -1084,6 +1100,10 @@
     $('trade-bar').classList.toggle('hidden', tab !== 'trade');
     $('main').classList.toggle('with-save-bar', tab === 'add');
     $('main').classList.toggle('with-trade-bar', tab === 'trade');
+    if (tab !== 'trade' && showProfit) {      // profit view never stays up when you leave the tab
+      showProfit = false;
+      $('trade-profit').textContent = '💲 Show my profit';
+    }
     if (tab === 'trade') renderTrade();
     qsa('.tab-btn').forEach(function (b) {
       b.classList.toggle('active', b.dataset.tab === tab);
@@ -2013,22 +2033,38 @@
   function outboxDB() {
     return new Promise(function (resolve, reject) {
       try {
-        var req = indexedDB.open('cardlog', 1);
-        req.onupgradeneeded = function () { req.result.createObjectStore('outbox', { keyPath: 'card.id' }); };
+        // v2 adds 'photos': photos of cards scanned into a trade, kept until it completes.
+        var req = indexedDB.open('cardlog', 2);
+        req.onupgradeneeded = function () {
+          var db = req.result;
+          if (!db.objectStoreNames.contains('outbox')) db.createObjectStore('outbox', { keyPath: 'card.id' });
+          if (!db.objectStoreNames.contains('photos')) db.createObjectStore('photos');
+        };
         req.onsuccess = function () { resolve(req.result); };
         req.onerror = function () { reject(req.error); };
       } catch (e) { reject(e); }
     });
   }
 
-  function outboxTx(mode, fn) {
+  function outboxTx(mode, fn, storeName) {
     return outboxDB().then(function (db) {
       return new Promise(function (resolve, reject) {
-        var tx = db.transaction('outbox', mode), store = tx.objectStore('outbox'), out = fn(store);
+        var name = storeName || 'outbox';
+        var tx = db.transaction(name, mode), store = tx.objectStore(name), out = fn(store);
         tx.oncomplete = function () { resolve(out && out.result !== undefined ? out.result : out); };
         tx.onerror = function () { reject(tx.error); };
       });
     });
+  }
+
+  function photoPut(key, blob) { return outboxTx('readwrite', function (s) { return s.put(blob, key); }, 'photos'); }
+  function photoGet(key) { return outboxTx('readonly', function (s) { return s.get(key); }, 'photos').catch(function () { return null; }); }
+  function photoDelete(key) { return outboxTx('readwrite', function (s) { return s.delete(key); }, 'photos').catch(function () {}); }
+
+  // Queued "mark sold" (from a completed trade). Keyed like cards so it shares
+  // the outbox; the 'sold:' prefix keeps it apart from the card's own id.
+  function queueSold(sale) {
+    return queueCard({ kind: 'markSold', card: { id: 'sold:' + sale.id }, sale: sale });
   }
 
   function queueCard(payload) {
@@ -2046,7 +2082,7 @@
     return outboxAll().then(function (items) {
       var el = $('outbox-banner');
       if (!items.length) { el.classList.add('hidden'); return 0; }
-      el.innerHTML = '<span>⏳ ' + items.length + (items.length === 1 ? ' card' : ' cards') +
+      el.innerHTML = '<span>⏳ ' + items.length + (items.length === 1 ? ' update' : ' updates') +
         ' saved on this device, waiting to upload</span>' +
         '<button type="button" class="btn btn-ghost" id="outbox-retry" style="padding:8px 12px;">Upload now</button>';
       el.classList.remove('hidden');
@@ -2069,15 +2105,24 @@
       return api('listAdmin', {}).then(function (res) {
         if (!(res && res.ok)) throw new Error('list failed');
         var have = {};
-        (res.cards || []).forEach(function (c) { have[c.id] = true; });
+        (res.cards || []).forEach(function (c) { have[c.id] = c.status || 'present'; });
         var sent = 0;
         return items.reduce(function (p, item) {
           return p.then(function (stop) {
             if (stop) return true;
-            if (have[item.card.id]) return outboxDelete(item.card.id).then(function () { return false; });
-            var body = { card: item.card, front: item.front };
-            if (item.back) body.back = item.back;
-            return api('addCard', body).then(function (r) {
+            var done = item.kind === 'markSold' ? have[item.sale.id] === 'Sold' || !have[item.sale.id]
+                                                : !!have[item.card.id];
+            if (done) return outboxDelete(item.card.id).then(function () { renderOutbox(); return false; });
+            var call;
+            if (item.kind === 'markSold') {
+              call = api('markSold', item.sale);
+            } else {
+              var body = { card: item.card };
+              if (item.front) body.front = item.front;
+              if (item.back) body.back = item.back;
+              call = api('addCard', body);
+            }
+            return call.then(function (r) {
               if (r && r.ok) {
                 sent++;
                 return outboxDelete(item.card.id).then(function () { renderOutbox(); return false; });   // live countdown
@@ -2086,7 +2131,7 @@
             }, function () { return true; });
           });
         }, Promise.resolve(false)).then(function () {
-          if (sent) toast('Uploaded ' + sent + (sent === 1 ? ' saved card' : ' saved cards') + ' ✓');
+          if (sent) toast('Uploaded ' + sent + (sent === 1 ? ' saved update' : ' saved updates') + ' ✓');
         });
       }).catch(function () {
         if (userAsked) toast('Could not reach the server. Will retry.');
@@ -2212,8 +2257,10 @@
     var thumb = it.thumb ? '<img src="' + esc(it.thumb) + '" alt="" loading="lazy" onerror="this.style.visibility=\'hidden\'">'
       : '<div class="ti-ph">🃏</div>';
     var comps = it.ebay ? ' · <a href="' + esc(it.ebay) + '" target="_blank" rel="noopener">🔎 eBay sold</a>' : '';
+    var paid = showProfit && side === 'give'
+      ? ' · <b style="color:var(--accent)">paid ' + (it.cost !== undefined && it.cost !== '' ? money2(num(it.cost)) : '?') + '</b>' : '';
     return '<div class="trade-item">' + thumb +
-      '<div class="ti-info"><div class="ti-name">' + esc(it.name) + '</div><div class="ti-sub">' + esc(it.detail || '') + comps + '</div></div>' +
+      '<div class="ti-info"><div class="ti-name">' + esc(it.name) + '</div><div class="ti-sub">' + esc(it.detail || '') + paid + comps + '</div></div>' +
       '<input inputmode="decimal" placeholder="$" value="' + esc(it.value) + '" data-side="' + side + '" data-i="' + i + '"' + (String(it.value).trim() ? '' : ' class="empty"') + '>' +
       '<button type="button" class="ti-x" data-del-side="' + side + '" data-i="' + i + '" aria-label="Remove">✕</button></div>';
   }
@@ -2250,19 +2297,52 @@
         html += '<div class="tb-verdict down">You give up ' + money2(-diff) + (g.total ? ' (' + pct + '%)' : '') + '</div>' +
           '<div class="tb-hint">To make it even: they add ' + money2(-diff) + ' cash.</div>';
       }
-      if (g.costKnown) {
-        var profit = r.total - g.cash - g.cost;   // what you receive minus what your cards cost you (your cash isn't a card)
-        html += '<div class="tb-hint">Your cost on cards you give: ' + money2(g.cost) + ' · profit vs cost: ' +
-          (profit >= 0 ? '+' : '−') + money2(Math.abs(profit)) + '</div>';
-      }
+      if (showProfit) html += profitHTML(g, r);
       var missing = g.missing + r.missing;
       if (missing) html += '<div class="tb-hint" style="color:var(--orange)">' + missing + (missing === 1 ? ' card has' : ' cards have') + ' no value yet.</div>';
     }
     $('trade-bar').innerHTML = html;
   }
 
+  // Paid-for view: hidden unless the owner taps "Show my profit", and hidden
+  // again on leaving the tab, so the other person never sees the numbers.
+  var showProfit = false;
+
+  /* Your real outcome: what you receive (their cards at your count-at %, plus
+   * their cash) minus what you paid for the cards you give, minus your cash. */
+  function profitHTML(g, r) {
+    var paid = 0, unknown = 0;
+    trade.give.forEach(function (it) {
+      if (it.cost !== undefined && it.cost !== '') paid += num(it.cost); else unknown++;
+    });
+    var outlay = paid + g.cash, receive = r.total, profit = receive - outlay;
+    var pct = outlay ? Math.round(100 * profit / outlay) : null;
+    var cls = profit >= 0 ? 'up' : 'down';
+    return '<div class="tb-profit"><div class="tb-row"><span>You paid ' + money2(paid) + (g.cash ? ' + ' + money2(g.cash) + ' cash' : '') +
+      '</span><span>You receive ' + money2(receive) + '</span></div>' +
+      '<div>Actual profit: <b class="' + cls + '">' + (profit >= 0 ? '+' : '−') + money2(Math.abs(profit)) +
+      (pct !== null ? ' (' + (profit >= 0 ? '+' : '') + pct + '%)' : '') + '</b></div>' +
+      (unknown ? '<div class="tb-hint" style="color:var(--orange)">' + unknown + (unknown === 1 ? ' of your cards has' : ' of your cards have') +
+        ' no paid-for price, so it counts as $0.</div>' : '') + '</div>';
+  }
+
+  $('trade-profit').addEventListener('click', function () {
+    showProfit = !showProfit;
+    $('trade-profit').textContent = showProfit ? '🙈 Hide profit' : '💲 Show my profit';
+    renderTrade();
+  });
+
   function addTradeItem(side, item) {
+    item.id = item.id || genId();
     trade[side].push(item);
+    saveTrade();
+    renderTrade();
+  }
+
+  function removeTradeItem(side, i) {
+    var it = trade[side][i];
+    if (it && it.hasPhoto) photoDelete('trade:' + it.id);
+    trade[side].splice(i, 1);
     saveTrade();
     renderTrade();
   }
@@ -2284,8 +2364,7 @@
   $('view-trade').addEventListener('click', function (e) {
     var del = e.target.closest('[data-del-side]');
     if (del) {
-      trade[del.dataset.delSide].splice(+del.dataset.i, 1);
-      saveTrade(); renderTrade();
+      removeTradeItem(del.dataset.delSide, +del.dataset.i);
       return;
     }
     var add = e.target.closest('[data-add]');
@@ -2298,9 +2377,142 @@
 
   $('trade-reset').addEventListener('click', function () {
     if ((trade.give.length || trade.get.length) && !window.confirm('Clear this trade and start a new one?')) return;
+    clearTrade();
+  });
+
+  // ---------------- Complete trade ----------------
+  // Your inventory cards are marked Sold (channel "Trade"); the cards you get
+  // are added to inventory. Everything goes through the offline outbox.
+  //   sale price of each of your cards = its share (by value) of what you
+  //     received: their cards at your %, plus their cash, minus your cash
+  //   paid-for price of each card you get = its share (by value) of what you
+  //     gave up: what you paid for your cards, plus your cash, minus their cash
+  function shares(total, items) {
+    var w = items.map(function (it) { return Math.max(0, num(it.value)); });
+    var sum = w.reduce(function (a, b) { return a + b; }, 0);
+    return items.map(function (it, i) {
+      var s = sum ? total * w[i] / sum : total / (items.length || 1);
+      return Math.max(0, Math.round(s * 100) / 100);
+    });
+  }
+
+  $('trade-complete').addEventListener('click', openCompleteTrade);
+
+  function openCompleteTrade() {
+    if (!trade.give.length && !trade.get.length) { toast('Add cards to the trade first'); return; }
+    var noValue = trade.give.concat(trade.get).filter(function (it) { return !String(it.value).trim(); }).length;
+    if (noValue) { toast(noValue + (noValue === 1 ? ' card needs' : ' cards need') + ' a value first', 3500); return; }
+    var g = sideTotals('give'), r = sideTotals('get');
+    var sale = shares(r.total - g.cash, trade.give);
+    var paidForYours = trade.give.reduce(function (a, it) { return a + (it.cost !== undefined && it.cost !== '' ? num(it.cost) : 0); }, 0);
+    var receivedItems = trade.get.filter(function (it) { return !it.cardId; });
+    var basis = shares(paidForYours + g.cash - r.cash, receivedItems);
+    var pickedPhotos = {};
+
+    var html = '<h3>Complete trade</h3>';
+    var mine = trade.give.map(function (it, i) { return { it: it, sale: sale[i] }; }).filter(function (x) { return x.it.cardId; });
+    if (mine.length) {
+      html += '<div class="tc-section">Mark as sold (channel: Trade)</div>';
+      mine.forEach(function (x, k) {
+        html += '<div class="tc-row"><div class="tc-name">' + esc(x.it.name) + '<span>' + esc(x.it.detail || '') + '</span></div>' +
+          '<label style="font-size:11px;color:var(--muted)">sold for $ <input data-sale="' + k + '" inputmode="decimal" value="' + x.sale + '"></label></div>';
+      });
+    }
+    if (receivedItems.length) {
+      html += '<div class="tc-section">Add to inventory</div>';
+      receivedItems.forEach(function (it, k) {
+        html += '<div class="tc-row"><div class="tc-name">' + esc(it.name) + '<span>' + esc(it.detail || '') + '</span>' +
+          '<span data-photo-status="' + k + '" class="' + (it.hasPhoto ? '' : 'tc-need') + '">' + (it.hasPhoto ? '✓ scanned photo' : 'Photo needed') + '</span></div>' +
+          '<div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">' +
+          '<label style="font-size:11px;color:var(--muted)">asking $ <input data-ask="' + k + '" inputmode="decimal" value="' + esc(String(num(it.value))) + '"></label>' +
+          '<label style="font-size:11px;color:var(--muted)">paid $ <input data-paid="' + k + '" inputmode="decimal" value="' + basis[k] + '"></label>' +
+          (it.hasPhoto ? '' : '<label class="btn btn-ghost tc-photo">📷 Add photo<input type="file" accept="image/*" data-photo="' + k + '"></label>') +
+          '</div></div>';
+      });
+    }
+    var others = trade.give.filter(function (it) { return !it.cardId; }).length + trade.get.filter(function (it) { return it.cardId; }).length;
+    if (others) html += '<div class="tb-hint" style="margin-top:8px">' + others + ' item(s) aren\'t inventory changes (things you added by hand on your side, or your own cards on their side) and are left as is.</div>';
+    if (!mine.length && !receivedItems.length) html += '<div class="trade-empty">Nothing to record: add your cards with “+ My cards” or scan theirs.</div>';
+    html += '<div class="sheet-actions"><button type="button" class="btn btn-ghost btn-block" id="tc-cancel">Cancel</button>' +
+      '<button type="button" class="btn btn-primary btn-block" id="tc-go"' + (!mine.length && !receivedItems.length ? ' disabled' : '') + '>Complete</button></div>';
+
+    var sheet = $('trade-sheet');
+    sheet.innerHTML = html;
+    $('trade-sheet-overlay').classList.add('open');
+    $('tc-cancel').addEventListener('click', closeTradeSheet);
+    sheet.onchange = function (e) {   // assigned, not added: the sheet element is reused
+      var k = e.target.dataset.photo;
+      if (k === undefined || !e.target.files[0]) return;
+      compressImage(e.target.files[0]).then(function (blob) {
+        pickedPhotos[k] = blob;
+        var st = sheet.querySelector('[data-photo-status="' + k + '"]');
+        if (st) { st.textContent = '✓ photo added'; st.className = ''; }
+      }).catch(function () { toast('Could not read that photo'); });
+    };
+    $('tc-go').addEventListener('click', function () {
+      var missing = receivedItems.filter(function (it, k) { return !it.hasPhoto && !pickedPhotos[k]; }).length;
+      if (missing) { toast(missing + (missing === 1 ? ' card needs' : ' cards need') + ' a photo before it can be added', 3500); return; }
+      var sales = mine.map(function (x, k) { return { it: x.it, soldPrice: num(sheet.querySelector('[data-sale="' + k + '"]').value) }; });
+      var adds = receivedItems.map(function (it, k) {
+        return { it: it, ask: sheet.querySelector('[data-ask="' + k + '"]').value.trim(),
+                 paid: num(sheet.querySelector('[data-paid="' + k + '"]').value), photo: pickedPhotos[k] || null };
+      });
+      $('tc-go').disabled = true;
+      $('tc-go').textContent = 'Saving…';
+      completeTrade(sales, adds).then(function (n) {
+        closeTradeSheet();
+        clearTrade();
+        renderGallery();
+        toast('Trade recorded: ' + n.sold + ' sold, ' + n.added + ' added ✓ Uploading…', 4500);
+        flushOutbox(true);
+      }, function (e) {
+        $('tc-go').disabled = false;
+        $('tc-go').textContent = 'Complete';
+        toast('Could not save the trade on this device: ' + (e && e.message || e), 5000);
+      });
+    });
+  }
+
+  function completeTrade(sales, adds) {
+    var today = new Date().toISOString().slice(0, 10);
+    var n = { sold: 0, added: 0 };
+    var chain = Promise.resolve();
+    sales.forEach(function (s) {
+      chain = chain.then(function () {
+        return queueSold({ id: s.it.cardId, soldPrice: s.soldPrice, channel: 'Trade', buyer: 'Trade ' + today });
+      }).then(function () {
+        var c = findCard(s.it.cardId);   // show it as sold right away; the server catches up
+        if (c) { c.status = 'Sold'; c.soldPrice = s.soldPrice; c.channel = 'Trade'; }
+        n.sold++;
+      });
+    });
+    adds.forEach(function (a) {
+      chain = chain.then(function () {
+        return a.photo ? a.photo : photoGet('trade:' + a.it.id);
+      }).then(function (blob) {
+        if (!blob) throw new Error('missing photo for ' + a.it.name);
+        return blobToBase64(blob);
+      }).then(function (b64) {
+        var c = a.it.card || { name: a.it.name };
+        var card = {
+          id: genId(), name: c.name, set: c.set || '', number: c.number || '', variant: c.variant || '',
+          cardType: c.graded ? 'Graded' : 'Raw', condition: c.graded ? '' : 'NM', grader: '', grade: '', cert: '',
+          language: 'English', price: a.ask, cost: String(a.paid), notes: 'From trade ' + today, tcgId: a.it.tcgId || ''
+        };
+        return queueCard({ card: card, front: { mime: 'image/jpeg', b64: b64 } });
+      }).then(function () { n.added++; });
+    });
+    return chain.then(function () {
+      try { localStorage.setItem('cardlog.cache', JSON.stringify(state.cards)); } catch (e) {}
+      return n;
+    });
+  }
+
+  function clearTrade() {
+    trade.give.concat(trade.get).forEach(function (it) { if (it.hasPhoto) photoDelete('trade:' + it.id); });
     trade = { give: [], get: [], giveCash: '', getCash: '', givePct: trade.givePct || '100', getPct: trade.getPct || '100' };
     saveTrade(); renderTrade();
-  });
+  }
 
   function closeTradeSheet() { $('trade-sheet-overlay').classList.remove('open'); }
   $('trade-sheet-overlay').addEventListener('click', function (e) { if (e.target.id === 'trade-sheet-overlay') closeTradeSheet(); });
@@ -2378,15 +2590,24 @@
         var setName = r.set_name === 'Base' ? 'Base Set' : r.set_name;
         var like = { name: r.name, number: number, set: setName, variant: res.printing ? res.printing.label : '',
                      cardType: res.graded ? 'Graded' : 'Raw', language: 'English' };
-        addTradeItem(side, {
+        var item = {
+          id: genId(),
           name: r.name,
           detail: [setName, number, res.printing && res.printing.label, res.graded ? 'Graded' : ''].filter(Boolean).join(' · '),
           value: '', tcgId: r.id,
           thumb: r.thumb ? 'scanner/' + r.thumb : (r.image_url_small || ''),
-          ebay: ebaySoldUrl(like)
+          ebay: ebaySoldUrl(like),
+          // kept for "Complete trade", which adds received cards to inventory
+          card: { name: r.name, set: setName, number: number, variant: like.variant, graded: !!res.graded }
+        };
+        var stored = res.photoBlob
+          ? photoPut('trade:' + item.id, res.photoBlob).then(function () { item.hasPhoto = true; }).catch(function () {})
+          : Promise.resolve();
+        stored.then(function () {
+          addTradeItem(side, item);
+          showTab('trade');
+          toast('Added ' + r.name + '. Enter its value.');
         });
-        showTab('trade');
-        toast('Added ' + r.name + '. Enter its value.');
       } });
     }).catch(function () { toast('Scanner could not load. Check connection.'); });
   }
