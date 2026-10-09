@@ -438,6 +438,38 @@
   @keyframes spin { to { transform: rotate(360deg); } }
 
   .cache-pill { text-align: center; font-size: 12px; color: var(--muted); padding: 8px; background: var(--panel); border-radius: 8px; margin-bottom: 12px; }
+  /* ── Trade analyzer ── */
+  .trade-side { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 12px; margin-bottom: 12px; }
+  .trade-head { display: flex; justify-content: space-between; align-items: baseline; font-weight: 800; font-size: 16px; margin-bottom: 8px; }
+  .trade-sub { font-size: 13px; color: var(--accent); }
+  .trade-item { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border); }
+  .trade-item img { width: 36px; height: 50px; object-fit: cover; border-radius: 4px; background: #0f0f22; flex: 0 0 auto; }
+  .trade-item .ti-info { flex: 1; min-width: 0; }
+  .trade-item .ti-name { font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .trade-item .ti-sub { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .trade-item .ti-sub a { color: var(--accent); text-decoration: none; }
+  .trade-item input { width: 78px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 8px; color: var(--text); text-align: right; }
+  .trade-item input.empty { border-color: var(--orange); }
+  .trade-item .ti-x { background: none; border: none; color: var(--muted); font-size: 16px; padding: 0 2px; }
+  .trade-empty { font-size: 13px; color: var(--muted); padding: 6px 0 4px; }
+  .trade-add { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0 8px; }
+  .trade-add .btn { padding: 9px 11px; font-size: 13px; }
+  .trade-opts { display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
+  .trade-opts label { display: flex; align-items: center; gap: 4px; }
+  .trade-opts input { width: 70px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 7px; color: var(--text); text-align: right; }
+  #trade-bar { padding: 10px 16px; border-bottom: 1px solid var(--border); font-size: 13px; }
+  #main.with-trade-bar { padding-bottom: calc(250px + var(--safe-bottom)); }
+  .trade-item .ti-ph { width: 36px; height: 50px; border-radius: 4px; background: #0f0f22; flex: 0 0 auto;
+    display: flex; align-items: center; justify-content: center; font-size: 18px; }
+  .tb-row { display: flex; justify-content: space-between; color: var(--muted); }
+  .tb-verdict { font-size: 16px; font-weight: 800; margin-top: 4px; }
+  .tb-verdict.up { color: var(--green); } .tb-verdict.down { color: var(--red); } .tb-verdict.even { color: var(--accent); }
+  .tb-hint { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .trade-sheet { max-height: 80vh; overflow-y: auto; }
+  .trade-pick { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 6px; margin-bottom: 6px; color: var(--text); }
+  .trade-pick img { width: 34px; height: 48px; object-fit: cover; border-radius: 4px; background: #0f0f22; }
+  .trade-pick.added { opacity: .45; }
+
   /* ── Grader logo badges ── */
   .grader-badge { display: inline-flex; align-items: center; gap: 4px; border: 1px solid rgba(255,255,255,.25); }
   .grader-badge img { height: 12px; width: auto; display: block; }
@@ -589,6 +621,36 @@
       </div>
     </div>
 
+    <div id="view-trade" class="hidden">
+      <div class="trade-side">
+        <div class="trade-head"><span>You give</span><span class="trade-sub" id="give-sum"></span></div>
+        <div id="give-items"></div>
+        <div class="trade-add">
+          <button type="button" class="btn btn-ghost" data-add="inventory" data-side="give">+ My cards</button>
+          <button type="button" class="btn btn-ghost" data-add="scan" data-side="give">📷 Scan</button>
+          <button type="button" class="btn btn-ghost" data-add="manual" data-side="give">+ Other</button>
+        </div>
+        <div class="trade-opts">
+          <label>Cash you add <span>$</span><input id="give-cash" inputmode="decimal" placeholder="0"></label>
+          <label>Count at <input id="give-pct" inputmode="numeric" value="100"><span>%</span></label>
+        </div>
+      </div>
+      <div class="trade-side">
+        <div class="trade-head"><span>You get</span><span class="trade-sub" id="get-sum"></span></div>
+        <div id="get-items"></div>
+        <div class="trade-add">
+          <button type="button" class="btn btn-ghost" data-add="scan" data-side="get">📷 Scan</button>
+          <button type="button" class="btn btn-ghost" data-add="manual" data-side="get">+ Other</button>
+          <button type="button" class="btn btn-ghost" data-add="inventory" data-side="get">+ My cards</button>
+        </div>
+        <div class="trade-opts">
+          <label>Cash they add <span>$</span><input id="get-cash" inputmode="decimal" placeholder="0"></label>
+          <label>Count at <input id="get-pct" inputmode="numeric" value="100"><span>%</span></label>
+        </div>
+      </div>
+      <button type="button" id="trade-reset" class="btn btn-ghost btn-block">Start a new trade</button>
+    </div>
+
     <div id="view-settings" class="hidden">
       <div class="field">
         <label>Connection</label>
@@ -608,11 +670,18 @@
     <div id="save-bar" class="hidden">
       <button id="save-card-btn" class="btn btn-primary btn-block">💾 Save Card</button>
     </div>
+    <div id="trade-bar" class="hidden"></div>
     <div class="tab-row">
       <button class="tab-btn" data-tab="add"><span class="icon">➕</span>Add</button>
       <button class="tab-btn" data-tab="gallery"><span class="icon">📦</span>Cards</button>
+      <button class="tab-btn" data-tab="trade"><span class="icon">⚖</span>Trade</button>
       <button class="tab-btn" data-tab="settings"><span class="icon">⚙</span>Settings</button>
     </div>
+  </div>
+
+  <!-- Trade: card picker / other-item sheet -->
+  <div class="sheet-overlay" id="trade-sheet-overlay">
+    <div class="sheet trade-sheet" id="trade-sheet"></div>
   </div>
 
   <!-- Detail overlay -->
@@ -1010,8 +1079,12 @@
     $('view-add').classList.toggle('hidden', tab !== 'add');
     $('view-gallery').classList.toggle('hidden', tab !== 'gallery');
     $('view-settings').classList.toggle('hidden', tab !== 'settings');
+    $('view-trade').classList.toggle('hidden', tab !== 'trade');
     $('save-bar').classList.toggle('hidden', tab !== 'add');
+    $('trade-bar').classList.toggle('hidden', tab !== 'trade');
     $('main').classList.toggle('with-save-bar', tab === 'add');
+    $('main').classList.toggle('with-trade-bar', tab === 'trade');
+    if (tab === 'trade') renderTrade();
     qsa('.tab-btn').forEach(function (b) {
       b.classList.toggle('active', b.dataset.tab === tab);
     });
@@ -2093,6 +2166,229 @@
       toast('Saved ' + n + ' of ' + list.length + ' cards. Storage problem: try again for the rest.', 6000);
       renderOutbox();
     });
+  }
+
+  // ============================================================
+  // TRADE ANALYZER: two sides of cards plus cash, valued on the same basis.
+  // Values come from asking prices (my cards) or what the owner types; the
+  // catalog has no market prices. Each side can be counted at a percentage
+  // (e.g. their cards at 80%). Saved on this device so a trade in progress
+  // survives closing the app; works offline.
+  // ============================================================
+  var TRADE_KEY = 'cardlog.trade';
+  var trade = loadTrade();
+
+  function loadTrade() {
+    try {
+      var t = JSON.parse(localStorage.getItem(TRADE_KEY) || 'null');
+      if (t && t.give && t.get) return t;
+    } catch (e) {}
+    return { give: [], get: [], giveCash: '', getCash: '', givePct: '100', getPct: '100' };
+  }
+
+  function saveTrade() {
+    try { localStorage.setItem(TRADE_KEY, JSON.stringify(trade)); } catch (e) {}
+  }
+
+  function num(v) { var n = parseFloat(String(v == null ? '' : v).replace(/[^0-9.\-]/g, '')); return isNaN(n) ? 0 : n; }
+  function money2(n) {
+    var r = Math.round(n * 100) / 100;
+    return '$' + r.toLocaleString(undefined, { minimumFractionDigits: r % 1 ? 2 : 0, maximumFractionDigits: 2 });
+  }
+
+  function sideTotals(side) {
+    var items = trade[side], cards = 0, cost = 0, costKnown = true;
+    items.forEach(function (it) {
+      cards += num(it.value);
+      if (it.cost !== undefined && it.cost !== '') cost += num(it.cost); else costKnown = false;
+    });
+    var pct = num(trade[side + 'Pct']) || 0;
+    var cash = num(trade[side + 'Cash']);
+    return { cards: cards, counted: cards * pct / 100, cash: cash, total: cards * pct / 100 + cash, pct: pct,
+             cost: cost, costKnown: costKnown && items.length > 0, missing: items.filter(function (it) { return !String(it.value).trim(); }).length };
+  }
+
+  function tradeItemHTML(side, it, i) {
+    var thumb = it.thumb ? '<img src="' + esc(it.thumb) + '" alt="" loading="lazy" onerror="this.style.visibility=\'hidden\'">'
+      : '<div class="ti-ph">🃏</div>';
+    var comps = it.ebay ? ' · <a href="' + esc(it.ebay) + '" target="_blank" rel="noopener">🔎 eBay sold</a>' : '';
+    return '<div class="trade-item">' + thumb +
+      '<div class="ti-info"><div class="ti-name">' + esc(it.name) + '</div><div class="ti-sub">' + esc(it.detail || '') + comps + '</div></div>' +
+      '<input inputmode="decimal" placeholder="$" value="' + esc(it.value) + '" data-side="' + side + '" data-i="' + i + '"' + (String(it.value).trim() ? '' : ' class="empty"') + '>' +
+      '<button type="button" class="ti-x" data-del-side="' + side + '" data-i="' + i + '" aria-label="Remove">✕</button></div>';
+  }
+
+  function renderTrade() {
+    ['give', 'get'].forEach(function (side) {
+      var el = $(side + '-items');
+      el.innerHTML = trade[side].length
+        ? trade[side].map(function (it, i) { return tradeItemHTML(side, it, i); }).join('')
+        : '<div class="trade-empty">' + (side === 'give' ? 'Add the cards you\'re giving.' : 'Add the cards you\'re getting.') + '</div>';
+      $(side + '-cash').value = trade[side + 'Cash'];
+      $(side + '-pct').value = trade[side + 'Pct'];
+    });
+    renderTradeSummary();
+  }
+
+  function renderTradeSummary() {
+    var g = sideTotals('give'), r = sideTotals('get');
+    $('give-sum').textContent = trade.give.length ? money2(g.total) : '';
+    $('get-sum').textContent = trade.get.length ? money2(r.total) : '';
+    var diff = r.total - g.total, html;
+    if (!trade.give.length && !trade.get.length && !g.cash && !r.cash) {
+      html = '<div class="tb-hint">Add cards to each side to compare the trade.</div>';
+    } else {
+      var basis = function (t) { return t.pct !== 100 && t.cards ? ' (cards at ' + t.pct + '%)' : ''; };
+      html = '<div class="tb-row"><span>You give ' + money2(g.total) + basis(g) + '</span><span>You get ' + money2(r.total) + basis(r) + '</span></div>';
+      var pct = g.total ? Math.round(100 * diff / g.total) : 0;
+      if (Math.abs(diff) < 0.005) {
+        html += '<div class="tb-verdict even">Even trade</div>';
+      } else if (diff > 0) {
+        html += '<div class="tb-verdict up">You come out ahead ' + money2(diff) + (g.total ? ' (+' + pct + '%)' : '') + '</div>' +
+          '<div class="tb-hint">To make it even: you add ' + money2(diff) + ' cash, or they add less.</div>';
+      } else {
+        html += '<div class="tb-verdict down">You give up ' + money2(-diff) + (g.total ? ' (' + pct + '%)' : '') + '</div>' +
+          '<div class="tb-hint">To make it even: they add ' + money2(-diff) + ' cash.</div>';
+      }
+      if (g.costKnown) {
+        var profit = r.total - g.cash - g.cost;   // what you receive minus what your cards cost you (your cash isn't a card)
+        html += '<div class="tb-hint">Your cost on cards you give: ' + money2(g.cost) + ' · profit vs cost: ' +
+          (profit >= 0 ? '+' : '−') + money2(Math.abs(profit)) + '</div>';
+      }
+      var missing = g.missing + r.missing;
+      if (missing) html += '<div class="tb-hint" style="color:var(--orange)">' + missing + (missing === 1 ? ' card has' : ' cards have') + ' no value yet.</div>';
+    }
+    $('trade-bar').innerHTML = html;
+  }
+
+  function addTradeItem(side, item) {
+    trade[side].push(item);
+    saveTrade();
+    renderTrade();
+  }
+
+  // Values and options: update totals as you type without redrawing the list.
+  $('view-trade').addEventListener('input', function (e) {
+    var t = e.target;
+    if (t.dataset.side && t.dataset.i !== undefined) {
+      trade[t.dataset.side][+t.dataset.i].value = t.value;
+      t.classList.toggle('empty', !t.value.trim());
+    } else if (/^(give|get)-(cash|pct)$/.test(t.id)) {
+      var parts = t.id.split('-');
+      trade[parts[0] + (parts[1] === 'cash' ? 'Cash' : 'Pct')] = t.value;
+    } else return;
+    saveTrade();
+    renderTradeSummary();
+  });
+
+  $('view-trade').addEventListener('click', function (e) {
+    var del = e.target.closest('[data-del-side]');
+    if (del) {
+      trade[del.dataset.delSide].splice(+del.dataset.i, 1);
+      saveTrade(); renderTrade();
+      return;
+    }
+    var add = e.target.closest('[data-add]');
+    if (!add) return;
+    var side = add.dataset.side;
+    if (add.dataset.add === 'inventory') openInventoryPicker(side);
+    else if (add.dataset.add === 'manual') openManualItem(side);
+    else if (add.dataset.add === 'scan') scanTradeCard(side);
+  });
+
+  $('trade-reset').addEventListener('click', function () {
+    if ((trade.give.length || trade.get.length) && !window.confirm('Clear this trade and start a new one?')) return;
+    trade = { give: [], get: [], giveCash: '', getCash: '', givePct: trade.givePct || '100', getPct: trade.getPct || '100' };
+    saveTrade(); renderTrade();
+  });
+
+  function closeTradeSheet() { $('trade-sheet-overlay').classList.remove('open'); }
+  $('trade-sheet-overlay').addEventListener('click', function (e) { if (e.target.id === 'trade-sheet-overlay') closeTradeSheet(); });
+
+  function cardDetail(c) {
+    return [c.set, c.number, c.cardType === 'Graded' ? ((c.grader || '') + ' ' + (c.grade || '')).trim() : c.condition]
+      .filter(Boolean).join(' · ');
+  }
+
+  function openInventoryPicker(side) {
+    var sheet = $('trade-sheet');
+    function draw(q) {
+      q = (q || '').toLowerCase();
+      var inTrade = {};
+      trade.give.concat(trade.get).forEach(function (it) { if (it.cardId) inTrade[it.cardId] = true; });
+      var list = state.cards.filter(function (c) {
+        if (c.status === 'Sold') return false;
+        return !q || [c.name, c.set, c.number, c.notes].join(' ').toLowerCase().indexOf(q) >= 0;
+      });
+      $('trade-pick-list').innerHTML = list.length ? list.map(function (c) {
+        return '<button type="button" class="trade-pick' + (inTrade[c.id] ? ' added' : '') + '" data-pick="' + esc(c.id) + '">' +
+          (c.frontId ? '<img src="' + thumbUrl(c.frontId) + '" alt="" loading="lazy">' : '<img alt="">') +
+          '<div style="flex:1;min-width:0"><div style="font-weight:700;font-size:13px">' + esc(c.name) + '</div>' +
+          '<div style="font-size:11px;color:var(--muted)">' + esc(cardDetail(c)) + '</div></div>' +
+          '<div style="font-weight:800;color:var(--accent)">' + (c.price !== '' && c.price != null ? money(c.price) : '') + '</div></button>';
+      }).join('') : '<div class="trade-empty">No cards match.</div>';
+    }
+    sheet.innerHTML = '<h3>Add from my cards</h3><input id="trade-pick-q" class="scan-search" placeholder="Search name, set, number…" ' +
+      'style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:11px;color:var(--text);margin-bottom:10px">' +
+      '<div id="trade-pick-list"></div><div class="sheet-actions"><button type="button" class="btn btn-ghost btn-block" id="trade-pick-done">Done</button></div>';
+    draw('');
+    $('trade-sheet-overlay').classList.add('open');
+    $('trade-pick-q').addEventListener('input', function (e) { draw(e.target.value); });
+    $('trade-pick-done').addEventListener('click', closeTradeSheet);
+    $('trade-pick-list').addEventListener('click', function (e) {
+      var b = e.target.closest('[data-pick]');
+      if (!b || b.classList.contains('added')) return;
+      var c = findCard(b.dataset.pick);
+      if (!c) return;
+      addTradeItem(side, {
+        cardId: c.id, name: c.name, detail: cardDetail(c),
+        value: c.price !== '' && c.price != null ? String(c.price) : '',
+        cost: c.cost !== '' && c.cost != null ? String(c.cost) : undefined,
+        thumb: c.frontId ? thumbUrl(c.frontId) : '', ebay: ebaySoldUrl(c)
+      });
+      b.classList.add('added');
+    });
+  }
+
+  function openManualItem(side) {
+    var sheet = $('trade-sheet');
+    sheet.innerHTML = '<h3>Add ' + (side === 'give' ? 'something you give' : 'something you get') + '</h3>' +
+      '<div class="field"><label>What is it?</label><input id="trade-m-name" placeholder="e.g. Charizard 4/102 PSA 8, sealed booster"></div>' +
+      '<div class="field"><label>Value ($)</label><input id="trade-m-value" inputmode="decimal" placeholder="0"></div>' +
+      '<div class="sheet-actions"><button type="button" class="btn btn-ghost btn-block" id="trade-m-cancel">Cancel</button>' +
+      '<button type="button" class="btn btn-primary btn-block" id="trade-m-add">Add</button></div>';
+    $('trade-sheet-overlay').classList.add('open');
+    $('trade-m-name').focus();
+    $('trade-m-cancel').addEventListener('click', closeTradeSheet);
+    $('trade-m-add').addEventListener('click', function () {
+      var name = $('trade-m-name').value.trim();
+      if (!name) { $('trade-m-name').focus(); return; }
+      closeTradeSheet();
+      addTradeItem(side, { name: name, detail: 'Added by hand', value: $('trade-m-value').value.trim(),
+                           ebay: ebaySoldUrl({ name: name }) });
+    });
+  }
+
+  // Scan their card (or one of yours) with the scanner; the value is typed after.
+  function scanTradeCard(side) {
+    loadScannerUI().then(function (sc) {
+      sc.open({ onConfirm: function (res) {
+        var r = res.record;
+        var number = /^\d+$/.test(r.number) && r.printed_total ? r.number + '/' + r.printed_total : r.number;
+        var setName = r.set_name === 'Base' ? 'Base Set' : r.set_name;
+        var like = { name: r.name, number: number, set: setName, variant: res.printing ? res.printing.label : '',
+                     cardType: res.graded ? 'Graded' : 'Raw', language: 'English' };
+        addTradeItem(side, {
+          name: r.name,
+          detail: [setName, number, res.printing && res.printing.label, res.graded ? 'Graded' : ''].filter(Boolean).join(' · '),
+          value: '', tcgId: r.id,
+          thumb: r.thumb ? 'scanner/' + r.thumb : (r.image_url_small || ''),
+          ebay: ebaySoldUrl(like)
+        });
+        showTab('trade');
+        toast('Added ' + r.name + '. Enter its value.');
+      } });
+    }).catch(function () { toast('Scanner could not load. Check connection.'); });
   }
 
   function setScanMatch(m) {
