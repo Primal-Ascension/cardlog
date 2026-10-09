@@ -341,7 +341,26 @@
     padding-bottom: var(--safe-bottom);
     z-index: 30;
   }
-  #tabbar.show { display: flex; flex-direction: column; }
+  #tabbar.show.has-bar { display: flex; flex-direction: column; }   /* only when Save or the trade summary is up */
+
+  /* ── Admin home and feature headers ── */
+  .home-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; }
+  .home-tile {
+    display: flex; flex-direction: column; align-items: flex-start; gap: 4px; text-align: left;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 16px 14px;
+    color: var(--text); min-height: 112px;
+  }
+  .home-tile.primary { grid-column: 1 / -1; min-height: 0; flex-direction: row; align-items: center; gap: 12px;
+    background: var(--accent); color: #16213e; border-color: var(--accent); }
+  .home-tile.primary .ht-sub { color: rgba(22,33,62,.75); }
+  .home-tile .ht-icon { font-size: 28px; line-height: 1; }
+  .home-tile .ht-title { font-size: 16px; font-weight: 800; }
+  .home-tile .ht-sub { font-size: 12px; color: var(--muted); }
+  .home-tile.primary > span:not(.ht-icon) { display: block; }
+  .view-head { display: flex; align-items: center; gap: 10px; margin: -4px 0 12px; font-size: 18px; font-weight: 800; }
+  .vh-back { background: var(--panel); border: 1px solid var(--border); color: var(--text); border-radius: 10px;
+    padding: 8px 12px; font-size: 14px; font-weight: 700; }
+  body:not(.is-admin) .admin-only { display: none !important; }
   .tab-row { display: flex; }
   /* Save bar: docked on top of the tab bar, shown on the Add tab only */
   #save-bar { padding: 10px 16px; border-bottom: 1px solid var(--border); }
@@ -511,7 +530,23 @@
   </div>
 
   <div id="main">
+    <div id="outbox-banner" class="banner hidden" style="display:flex;align-items:center;justify-content:space-between;gap:10px;"></div>
+
+    <!-- Admin home: one tile per feature -->
+    <div id="view-home" class="hidden">
+      <div class="home-grid">
+        <button type="button" class="home-tile primary" data-go="scan"><span class="ht-icon">📷</span><span class="ht-title">Scan card</span><span class="ht-sub">Identify and add a card</span></button>
+        <button type="button" class="home-tile" data-go="add"><span class="ht-icon">➕</span><span class="ht-title">Add card</span><span class="ht-sub">Fill in by hand</span></button>
+        <button type="button" class="home-tile" data-go="bulk"><span class="ht-icon">🖼</span><span class="ht-title">Bulk add</span><span class="ht-sub">Many photos at once</span></button>
+        <button type="button" class="home-tile" data-go="gallery"><span class="ht-icon">📦</span><span class="ht-title">My cards</span><span class="ht-sub" id="home-cards-sub">Inventory</span></button>
+        <button type="button" class="home-tile" data-go="trade"><span class="ht-icon">⚖</span><span class="ht-title">Trade</span><span class="ht-sub" id="home-trade-sub">Compare a deal</span></button>
+        <button type="button" class="home-tile" data-go="settings"><span class="ht-icon">⚙</span><span class="ht-title">Settings</span><span class="ht-sub">Connection, export</span></button>
+      </div>
+      <div id="scan-status"></div>
+    </div>
+
     <div id="view-gallery">
+      <div class="view-head admin-only"><button type="button" class="vh-back" data-home>← Home</button><span>My cards</span></div>
       <div id="cache-pill" class="cache-pill hidden">Showing cached inventory</div>
       <div id="search-row">
         <input id="search-input" placeholder="Search name, set, number, notes…">
@@ -529,16 +564,14 @@
     </div>
 
     <div id="view-add" class="hidden">
+      <div class="view-head"><button type="button" class="vh-back" data-home>← Home</button><span id="add-title">Add card</span></div>
       <div id="edit-banner" class="banner banner-ok hidden" style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
         <span id="edit-banner-text">Editing</span>
         <button type="button" id="cancel-edit-btn" class="btn btn-ghost" style="padding:8px 12px;">Cancel</button>
       </div>
       <div id="add-banner"></div>
-      <div id="outbox-banner" class="banner hidden" style="display:flex;align-items:center;justify-content:space-between;gap:10px;"></div>
       <div id="scan-row" style="margin-bottom:14px;">
         <button type="button" id="scan-btn" class="btn btn-primary btn-block">📷 Scan card</button>
-        <button type="button" id="bulk-btn" class="btn btn-ghost btn-block" style="margin-top:8px;">🖼 Bulk add from photos</button>
-        <div id="scan-status" style="margin-top:8px;"></div>
         <div id="scan-match" class="scan-match hidden">
           <span id="scan-match-text"></span>
           <button type="button" id="scan-match-clear" aria-label="Clear match">✕</button>
@@ -634,6 +667,7 @@
     </div>
 
     <div id="view-trade" class="hidden">
+      <div class="view-head"><button type="button" class="vh-back" data-home>← Home</button><span>Trade</span></div>
       <div class="trade-side">
         <div class="trade-head"><span>You give</span><span class="trade-sub" id="give-sum"></span></div>
         <div id="give-items"></div>
@@ -668,6 +702,7 @@
     </div>
 
     <div id="view-settings" class="hidden">
+      <div class="view-head"><button type="button" class="vh-back" data-home>← Home</button><span>Settings</span></div>
       <div class="field">
         <label>Connection</label>
         <div id="settings-status" style="font-size:14px;padding:12px;background:var(--panel);border-radius:10px;">-</div>
@@ -687,12 +722,6 @@
       <button id="save-card-btn" class="btn btn-primary btn-block">💾 Save Card</button>
     </div>
     <div id="trade-bar" class="hidden"></div>
-    <div class="tab-row">
-      <button class="tab-btn" data-tab="add"><span class="icon">➕</span>Add</button>
-      <button class="tab-btn" data-tab="gallery"><span class="icon">📦</span>Cards</button>
-      <button class="tab-btn" data-tab="trade"><span class="icon">⚖</span>Trade</button>
-      <button class="tab-btn" data-tab="settings"><span class="icon">⚙</span>Settings</button>
-    </div>
   </div>
 
   <!-- Trade: card picker / other-item sheet -->
@@ -1053,6 +1082,7 @@
           state.online = true;
           updateSyncPill();
           renderGallery();
+          if (state.currentTab === 'home') renderHome();   // counts on the tiles
           savePhotosForOffline(state.cards);
         }
       })
@@ -1089,9 +1119,22 @@
   // ============================================================
   // TABS / NAV
   // ============================================================
-  function showTab(tab) {
+  // Admin opens on Home (a tile per feature); each feature has "← Home".
+  // Moves between screens are pushed to history, so the phone's back swipe or
+  // button also returns Home. Public visitors only ever see the gallery.
+  function showTab(tab, fromHistory) {
     if (tab !== 'add' && state.editingId && typeof exitEdit === 'function') exitEdit();
+    if (state.admin && !fromHistory && tab !== state.currentTab) {
+      try {
+        if (tab === 'home') history.replaceState({ tab: 'home' }, '');
+        else if (state.currentTab === 'home') history.pushState({ tab: tab }, '');
+        else history.replaceState({ tab: tab }, '');
+      } catch (e) {}
+    }
     state.currentTab = tab;
+    $('view-home').classList.toggle('hidden', tab !== 'home');
+    if (tab === 'home') renderHome();
+    $('tabbar').classList.toggle('has-bar', tab === 'add' || tab === 'trade');
     $('view-add').classList.toggle('hidden', tab !== 'add');
     $('view-gallery').classList.toggle('hidden', tab !== 'gallery');
     $('view-settings').classList.toggle('hidden', tab !== 'settings');
@@ -1105,16 +1148,49 @@
       $('trade-profit').textContent = '💲 Show my profit';
     }
     if (tab === 'trade') renderTrade();
-    qsa('.tab-btn').forEach(function (b) {
-      b.classList.toggle('active', b.dataset.tab === tab);
-    });
     if (tab === 'settings') renderSettings();
     if (tab === 'gallery') renderGallery();
+    $('main').scrollTop = 0;
   }
 
-  qsa('.tab-btn').forEach(function (btn) {
-    btn.addEventListener('click', function () { showTab(btn.dataset.tab); });
+  function goHome() {
+    // Came from Home via a pushed history entry: step back so history stays tidy.
+    if (history.state && history.state.tab && history.state.tab !== 'home') {
+      try { history.back(); return; } catch (e) {}
+    }
+    showTab('home');
+  }
+
+  window.addEventListener('popstate', function (e) {
+    if (!state.admin) return;
+    $('detail-overlay').classList.remove('open');
+    showTab((e.state && e.state.tab) || 'home', true);
   });
+
+  document.addEventListener('click', function (e) {
+    if (e.target.closest('[data-home]')) { goHome(); return; }
+    var tile = e.target.closest('[data-go]');
+    if (!tile) return;
+    var go = tile.dataset.go;
+    if (go === 'scan') {
+      showTab('add');
+      loadScannerUI().then(function (sc) { sc.open({ onConfirm: applyScanResult }); })
+        .catch(function () { toast('Scanner could not load. Check connection.'); });
+    } else if (go === 'bulk') {
+      loadScannerUI().then(function (sc) { sc.openBulk({ onSave: saveBulk }); })
+        .catch(function () { toast('Scanner could not load. Check connection.'); });
+    } else {
+      showTab(go);
+    }
+  });
+
+  function renderHome() {
+    var forSale = state.cards.filter(function (c) { return c.status === 'For Sale'; }).length;
+    var hold = state.cards.filter(function (c) { return c.status === 'Hold'; }).length;
+    $('home-cards-sub').textContent = forSale + ' for sale' + (hold ? ' · ' + hold + ' on hold' : '');
+    var n = trade.give.length + trade.get.length;
+    $('home-trade-sub').textContent = n ? 'Trade in progress (' + n + (n === 1 ? ' card)' : ' cards)') : 'Compare a deal';
+  }
 
   // ============================================================
   // ADMIN UNLOCK
@@ -1125,8 +1201,9 @@
     $('tabbar').classList.add('show');
     document.body.style.paddingBottom = '';
     $('admin-btn').classList.add('hidden');
+    document.body.classList.add('is-admin');
     refreshCards();
-    showTab('add');
+    showTab('home');
     loadScannerUI();
     flushOutbox();
   }
@@ -2165,11 +2242,6 @@
 
   $('scan-btn').addEventListener('click', function () {
     loadScannerUI().then(function (sc) { sc.open({ onConfirm: applyScanResult }); })
-      .catch(function () { toast('Scanner could not load. Check connection.'); });
-  });
-
-  $('bulk-btn').addEventListener('click', function () {
-    loadScannerUI().then(function (sc) { sc.openBulk({ onSave: saveBulk }); })
       .catch(function () { toast('Scanner could not load. Check connection.'); });
   });
 
