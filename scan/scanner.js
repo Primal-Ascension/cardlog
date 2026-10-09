@@ -145,6 +145,8 @@
         progressText = p.done < p.total ? (p.tier === 1 ? 'Downloading scanner ' : 'Thumbnails ') + p.done + '/' + p.total + mb : '';
         if (lastStatus && p.tier === 2) lastStatus.tier2 = [lastStatus.tier2[1] - (p.total - p.done), lastStatus.tier2[1]];
         renderStatus();
+        var bp = ui && $('[data-el=bprog]', ui);   // bulk add's setup screen
+        if (bp) bp.textContent = progressText;
         if (setupBar && p.tier === 1 && p.total) setupBar.style.width = Math.round(100 * p.done / p.total) + '%';
         if (p.tier === 2 && !tier1Announced) {
           tier1Announced = true;   // scanner usable now; thumbnails continue in the background
@@ -209,7 +211,7 @@
     return root;
   }
 
-  function hint(t) { if (ui) $('[data-el=hint]', ui).textContent = t; }
+  function hint(t) { var h = ui && $('[data-el=hint]', ui); if (h) h.textContent = t; }
 
   /* Tap the GPU/CPU badge to flip this phone's preference. Takes effect the
    * next time the page loads, since a running model can't change backend. */
@@ -404,11 +406,26 @@
       if (ui) $('[data-el=badge]', ui).textContent = 'CPU';
     };
     // Let the hint paint before the synchronous OpenCV work starts.
-    setTimeout(function () { processCanvasNow(canvas, how, hintQuad, t0, ticker, function (s) { stage = s; tick(); }); }, 30);
+    setTimeout(function () {
+      identify(canvas, hintQuad, function (s) { stage = s; tick(); }).then(function (res) {
+        clearInterval(ticker);
+        busy = false;
+        res.how = how;
+        showResult(res);
+      }, function (e) {
+        clearInterval(ticker);
+        busy = false;
+        hint('Scan failed: ' + (e.message || e));
+      });
+    }, 30);
   }
 
-  function processCanvasNow(canvas, how, hintQuad, t0, ticker, setStage) {
-    var cv = E.cv, src = cv.imread(canvas), quad = null, slab = null, slabKind = null;
+  /* Detect, straighten, embed and match one image. Shared by the camera,
+   * the photo picker and bulk add. Resolves with
+   *   { top: [{i, score}], ms, detectMs, detected, rotated, photos: {raw, graded}, slabKind } */
+  function identify(canvas, hintQuad, setStage) {
+    setStage = setStage || function () {};
+    var t0 = performance.now(), cv = E.cv, src = cv.imread(canvas), quad = null, slab = null, slabKind = null;
     try {
       var found = global.CardDetect.findCardAndSlab(cv, src, 1000, true);
       quad = found.card; slab = found.slab; slabKind = found.slabKind;
@@ -419,7 +436,7 @@
     var photoBlobP = makePhotos(cv, src, quad, slabQuad);
     var tDetect = performance.now() - t0;
     setStage('Reading card (' + backendName() + ')');
-    global.ScanEngine.embed(E, [card]).then(function (q1) {
+    return global.ScanEngine.embed(E, [card]).then(function (q1) {
       setStage('Matching');
       var top = global.ScanEngine.match(E, q1, 5);
       if (top[0].score >= CONFIDENT) return { top: top, rotated: false };
@@ -435,16 +452,12 @@
       card.delete(); src.delete();
       var ms = performance.now() - t0;
       return photoBlobP.then(function (photos) {
-        clearInterval(ticker);
-        busy = false;
-        showResult({ top: r.top, ms: ms, detectMs: tDetect, detected: !!quad, how: how, rotated: r.rotated,
-                     photos: photos, slabKind: slabQuad ? slabKind : null });
+        return { top: r.top, ms: ms, detectMs: tDetect, detected: !!quad, rotated: r.rotated,
+                 photos: photos, slabKind: slabQuad ? slabKind : null };
       });
-    }).catch(function (e) {
-      clearInterval(ticker);
+    }, function (e) {
       try { card.delete(); src.delete(); } catch (x) {}
-      busy = false;
-      hint('Scan failed: ' + (e.message || e));
+      throw e;
     });
   }
 
@@ -515,19 +528,37 @@
     return v && v.printings && v.printings.length ? v : null;
   }
 
-  function showResult(res) {
+  function makeView(res) {
     var topI = res.top[0].i;
     var reps = groupReprints(topI);
-    view = {
+    var v = {
       res: res, reps: reps, top: res.top,
       confident: res.top[0].score >= CONFIDENT,
       selected: reps[0],                 // oldest printing of the art is the default
       defaultSel: reps[0], printingIdx: null, defaultPrinting: null, mode: 'main',
       graded: !!res.slabKind, gradedDefault: !!res.slabKind   // slab or grading label seen around the card
     };
-    var p = printings(view.selected);
-    view.printingIdx = view.defaultPrinting = p ? p.default : null;
+    var p = printings(v.selected);
+    v.printingIdx = v.defaultPrinting = p ? p.default : null;
+    return v;
+  }
+
+  function showResult(res) {
+    view = makeView(res);
     renderSheet();
+  }
+
+  /* What the current selection resolves to: the card record, printing,
+   * Raw/Graded and the matching front photo. */
+  function resultOf(v) {
+    var saved = view;
+    view = v;
+    var c = chosenRecord();
+    view = saved;
+    var printing = c.chip ? { code: c.chip.code, label: PRINTING_LABELS[c.chip.code] || c.chip.label } : null;
+    var photos = (v.res && v.res.photos) || {};
+    return { record: c.record, printing: printing, graded: !!v.graded,
+             photoBlob: (v.graded ? photos.graded : photos.raw) || null };
   }
 
   function selectCard(i, fromTop) {
@@ -588,7 +619,8 @@
     html += '<div class="scan-label">Type' + (view.gradedDefault ? ' · slab detected' : '') + '</div><div class="scan-chips">' +
       '<button class="scan-chip' + (!view.graded ? ' sel' : '') + '" data-type="raw">Raw</button>' +
       '<button class="scan-chip' + (view.graded ? ' sel' : '') + '" data-type="graded">Graded</button></div>';
-    html += '<div class="scan-actions"><button class="scan-again" data-act2="again">Rescan</button><button class="scan-ok" data-act2="ok">Confirm</button></div>';
+    html += '<div class="scan-actions"><button class="scan-again" data-act2="again">' + (view.bulkIndex != null ? 'Back' : 'Rescan') +
+      '</button><button class="scan-ok" data-act2="ok">Confirm</button></div>';
     html += '<button class="scan-more" data-act2="more">' + (view.showTop ? 'Hide' : 'Not it?') + ' Top 5 matches</button>';
     if (view.showTop) {
       html += '<div class="scan-list">';
@@ -662,12 +694,12 @@
   }
 
   function confirm() {
-    var c = chosenRecord(), r = c.record, chip = c.chip;
-    var printing = chip ? { code: chip.code, label: PRINTING_LABELS[chip.code] || chip.label } : null;
-    logScan(r, printing);
-    var photos = view.res.photos || {};
-    var result = { record: r, printing: printing, graded: !!view.graded,
-                   photoBlob: (view.graded ? photos.graded : photos.raw) || null };
+    var result = resultOf(view);
+    if (view.bulkIndex != null) {          // editing one row of bulk add (logged when saved)
+      bulkApply(view.bulkIndex, view);
+      return;
+    }
+    logScan(result.record, result.printing);
     close();
     if (opts && opts.onConfirm) opts.onConfirm(result);
   }
@@ -688,6 +720,314 @@
     } catch (e) {}
   }
 
+  /* ---------------- bulk add from photos ----------------
+   * Pick many photos, identify each with the same pipeline as a scan, review
+   * them in a list (price, condition or grader/grade, fix any match with the
+   * usual popup), then hand them all to CardLog, which queues them in the
+   * offline outbox and uploads them one by one. */
+  var bulk = null;   // { items: [], onSave }
+  var CONDITIONS = ['NM', 'LP', 'MP', 'HP', 'DMG'], GRADERS = ['PSA', 'BGS', 'CGC', 'TAG'];
+
+  var bulkCss = [
+    '.bulk-list{position:absolute;inset:0;overflow-y:auto;padding:10px 12px 20px;background:var(--bg,#1a1a2e)}',
+    '.bulk-empty{text-align:center;color:#aaa;padding:40px 20px;font-size:14px;line-height:1.5}',
+    '.bulk-row{display:flex;gap:10px;align-items:flex-start;background:var(--panel,#16213e);border:1px solid var(--border,#2a2a4a);border-radius:12px;padding:8px;margin-bottom:8px}',
+    '.bulk-row.need{border-color:var(--orange,#e67e22)}',
+    '.bulk-row img.ph{width:54px;height:75px;object-fit:cover;border-radius:6px;background:#0f0f22;flex:0 0 auto}',
+    '.bulk-info{flex:1;min-width:0}',
+    '.bulk-card{background:none;border:none;color:#fff;text-align:left;padding:0;width:100%;font-size:14px;font-weight:800}',
+    '.bulk-card span{display:block;font-size:11px;color:var(--muted,#8888aa);font-weight:600;margin-top:2px}',
+    '.bulk-card .bulk-check{display:inline-block;margin-top:0;font-size:10px;font-weight:800;background:var(--orange,#e67e22);color:#fff;border-radius:4px;padding:1px 5px;margin-left:5px;vertical-align:middle}',
+    '.bulk-fields{display:flex;gap:6px;margin-top:7px;flex-wrap:wrap}',
+    '.bulk-fields select,.bulk-fields input{background:var(--bg,#1a1a2e);border:1px solid var(--border,#2a2a4a);color:#fff;border-radius:8px;padding:8px;font-size:16px}',
+    '.bulk-fields input[data-f=price]{width:96px}.bulk-fields input[data-f=grade]{width:70px}',
+    '.bulk-fields input.missing{border-color:var(--orange,#e67e22)}',
+    '.bulk-x{background:none;border:none;color:#888;font-size:18px;padding:0 4px}',
+    '.bulk-save{background:var(--accent,#f5c518);color:#16213e;border:none;border-radius:10px;padding:13px 18px;font-weight:800;font-size:15px}',
+    '.bulk-save:disabled{opacity:.4}',
+    '.bulk-status{font-size:12px;color:#aaa;padding:0 4px}'
+  ].join('\n');
+  var bulkStyled = false;
+
+  function openBulk(o) {
+    ensureStyle();
+    if (!bulkStyled) { var s = document.createElement('style'); s.textContent = bulkCss; document.head.appendChild(s); bulkStyled = true; }
+    if (ui) return;
+    opts = {};
+    bulk = { items: [], onSave: o && o.onSave };
+    ui = document.createElement('div');
+    ui.className = 'scan-ui';
+    ui.innerHTML =
+      '<div class="scan-top"><button class="scan-x" data-act="bclose" aria-label="Close">✕</button>' +
+      '<div class="scan-title">Bulk add from photos</div><div class="scan-badge" data-el="badge"></div></div>' +
+      '<div class="scan-stage"><div class="bulk-list" data-el="list"></div></div>' +
+      '<div class="scan-bottom"><label class="scan-side">🖼 Add photos<input type="file" accept="image/*" multiple data-el="files"></label>' +
+      '<span class="bulk-status" data-el="bstatus"></span>' +
+      '<button class="bulk-save" data-act="bsave" disabled>Save all</button></div>';
+    document.body.appendChild(ui);
+    ui.addEventListener('click', bulkClick);
+    ui.addEventListener('input', bulkInput);
+    ui.addEventListener('change', function (e) {
+      if (e.target.dataset.el === 'files') { var fs = Array.prototype.slice.call(e.target.files); e.target.value = ''; bulkAddFiles(fs); }
+      else bulkInput(e);
+    });
+    renderBulk();
+    loadDeps().then(function () { global.ScanEngine.setPaused(true); return refreshStatus(); }).then(function (s) {
+      if (s.ready) return;
+      if (!navigator.onLine) throw new Error('The scanner isn\'t downloaded yet. Connect to the internet once to download it.');
+      // Not set up yet: offer the one-time download here, then carry on.
+      bulk.blocked = 'setup';
+      renderBulk();
+      return new Promise(function (resolve, reject) {
+        bulk.startSetup = function () {
+          bulk.blocked = 'downloading';
+          renderBulk();
+          setupDone = resolve;
+          startSync().then(function (st) { if (!st.ready) reject(new Error(st.syncError || 'Download incomplete. Try again on Wi-Fi.')); }, reject);
+        };
+      });
+    }).then(function () {
+      if (bulk) { bulk.blocked = 'loading'; renderBulk(); }
+      return global.ScanEngine.load();
+    }).then(function (engine) {
+      E = engine;
+      if (!bulk) return;
+      bulk.blocked = null;
+      if (ui) $('[data-el=badge]', ui).textContent = backendName();
+      renderBulk();
+      bulkNext();
+    }).catch(function (e) {
+      if (!bulk) return;
+      bulk.blocked = 'error';
+      bulk.error = String(e && e.message || e);
+      renderBulk();
+    });
+  }
+
+  function bulkAddFiles(files) {
+    files.forEach(function (f) { bulk.items.push({ file: f, status: 'queued', price: '', condition: 'NM', grader: 'PSA', grade: '' }); });
+    renderBulk();
+    bulkNext();
+  }
+
+  var bulkBusy = false;
+  function bulkNext() {
+    if (!E || bulkBusy || !bulk) return;
+    var idx = bulk.items.findIndex(function (it) { return it.status === 'queued'; });
+    if (idx < 0) { renderBulkStatus(); return; }
+    var it = bulk.items[idx];
+    it.status = 'working';
+    bulkBusy = true;
+    renderBulkStatus();
+    decodeFile(it.file).then(function (canvas) {
+      return identify(canvas, null);
+    }).then(function (res) {
+      res.how = 'bulk';
+      it.view = makeView(res);
+      it.status = 'ok';
+      bulkApplyFields(it);
+      if (it.view.graded) it.grader = GRADERS[0];
+    }).catch(function (e) {
+      it.status = 'failed';
+      it.error = String(e && e.message || e);
+    }).then(function () {
+      it.file = null;   // free the original photo
+      bulkBusy = false;
+      renderBulkRow(idx);
+      setTimeout(bulkNext, 0);
+    });
+  }
+
+  function decodeFile(file) {
+    var maxSide = 2000;
+    function draw(src, w, h) {
+      var s = Math.min(1, maxSide / Math.max(w, h)), c = document.createElement('canvas');
+      c.width = Math.round(w * s); c.height = Math.round(h * s);
+      c.getContext('2d').drawImage(src, 0, 0, c.width, c.height);
+      return c;
+    }
+    if (global.createImageBitmap) {
+      return createImageBitmap(file, { imageOrientation: 'from-image' }).then(function (bmp) {
+        var c = draw(bmp, bmp.width, bmp.height);
+        if (bmp.close) bmp.close();
+        return c;
+      }).catch(function () { return decodeWithImg(); });
+    }
+    return decodeWithImg();
+    function decodeWithImg() {
+      return new Promise(function (resolve, reject) {
+        var url = URL.createObjectURL(file), img = new Image();
+        img.onload = function () { URL.revokeObjectURL(url); resolve(draw(img, img.naturalWidth, img.naturalHeight)); };
+        img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('could not read this photo')); };
+        img.src = url;
+      });
+    }
+  }
+
+  /* Copy the chosen card, printing, type and photo from the row's view. */
+  function bulkApplyFields(it) {
+    var r = resultOf(it.view);
+    it.record = r.record; it.printing = r.printing; it.graded = r.graded; it.photoBlob = r.photoBlob;
+    if (it.thumbURL) URL.revokeObjectURL(it.thumbURL);
+    it.thumbURL = r.photoBlob ? URL.createObjectURL(r.photoBlob) : '';
+  }
+
+  /* Confirm in the popup while editing row idx. */
+  function bulkApply(idx, v) {
+    var it = bulk && bulk.items[idx];
+    var s = ui && $('.scan-sheet', ui);
+    if (s) s.remove();
+    view = null;
+    if (!it) return;
+    delete v.bulkIndex;
+    v.confident = true;   // the owner confirmed this match: no more "Check"
+    it.view = v;
+    bulkApplyFields(it);
+    renderBulkRow(idx);
+  }
+
+  function bulkRowHTML(it, idx) {
+    if (it.status === 'queued' || it.status === 'working') {
+      return '<div class="bulk-row" data-idx="' + idx + '"><div class="bulk-info"><div class="bulk-card">' +
+        (it.status === 'working' ? 'Identifying…' : 'Waiting…') + '<span>Photo ' + (idx + 1) + '</span></div></div></div>';
+    }
+    if (it.status === 'failed') {
+      return '<div class="bulk-row need" data-idx="' + idx + '"><div class="bulk-info"><div class="bulk-card">Couldn\'t read this photo' +
+        '<span>' + esc(it.error || '') + '</span></div></div><button class="bulk-x" data-remove="' + idx + '" aria-label="Remove">✕</button></div>';
+    }
+    var r = it.record, conf = it.view.confident;
+    var num = /^\d+$/.test(r.number) && r.printed_total ? r.number + '/' + r.printed_total : r.number;
+    var fields = it.graded
+      ? '<select data-f="grader">' + GRADERS.map(function (g) { return '<option' + (g === it.grader ? ' selected' : '') + '>' + g + '</option>'; }).join('') + '</select>' +
+        '<input data-f="grade" placeholder="Grade" value="' + esc(it.grade) + '">'
+      : '<select data-f="condition">' + CONDITIONS.map(function (c) { return '<option' + (c === it.condition ? ' selected' : '') + '>' + c + '</option>'; }).join('') + '</select>';
+    fields += '<input data-f="price" inputmode="decimal" placeholder="Price $" value="' + esc(it.price) + '"' + (it.missing ? ' class="missing"' : '') + '>';
+    return '<div class="bulk-row' + (it.missing || !conf ? ' need' : '') + '" data-idx="' + idx + '">' +
+      (it.thumbURL ? '<img class="ph" src="' + it.thumbURL + '" alt="">' : '') +
+      '<div class="bulk-info"><button class="bulk-card" data-edit="' + idx + '">' + esc(r.name) + (conf ? '' : '<span class="bulk-check">Check</span>') +
+      '<span>' + esc(r.set_name) + ' · ' + esc(num) + (it.printing ? ' · ' + esc(it.printing.label) : '') + ' · ' + (it.graded ? 'Graded' : 'Raw') + ' · tap to change</span></button>' +
+      '<div class="bulk-fields">' + fields + '</div></div>' +
+      '<button class="bulk-x" data-remove="' + idx + '" aria-label="Remove">✕</button></div>';
+  }
+
+  function renderBulk() {
+    if (!ui || !bulk) return;
+    var l = $('[data-el=list]', ui);
+    var queued = bulk.items.filter(function (it) { return it.status !== 'removed'; }).length;
+    var note = queued ? '<br><br>' + queued + (queued === 1 ? ' photo is' : ' photos are') + ' waiting and will be identified after.' : '';
+    if (bulk.blocked === 'setup') {
+      l.innerHTML = '<div class="bulk-empty">The scanner needs a one-time download (about ' + estimateMB(lastStatus || {}) +
+        ', Wi-Fi recommended) before it can identify cards.' + note +
+        '<br><br><button class="bulk-save" data-act="bsetup">Download scanner</button></div>';
+      return renderBulkStatus();
+    }
+    if (bulk.blocked === 'downloading' || bulk.blocked === 'loading') {
+      l.innerHTML = '<div class="bulk-empty">' + (bulk.blocked === 'downloading'
+        ? 'Downloading the scanner… <span data-el="bprog">' + esc(progressText) + '</span><br>Keep this screen open.'
+        : 'Starting the scanner…') + note + '</div>';
+      return renderBulkStatus();
+    }
+    if (bulk.blocked === 'error') {
+      l.innerHTML = '<div class="bulk-empty">' + esc(bulk.error) + '</div>';
+      return renderBulkStatus();
+    }
+    if (!bulk.items.length) {
+      l.innerHTML = '<div class="bulk-empty">Tap <b>🖼 Add photos</b> and pick as many card photos as you like.<br>' +
+        'Each one is identified, then you add prices and save them all at once.</div>';
+    } else {
+      l.innerHTML = bulk.items.map(function (it, i) { return it.status === 'removed' ? '' : bulkRowHTML(it, i); }).join('');
+    }
+    renderBulkStatus();
+  }
+
+  function renderBulkRow(idx) {
+    if (bulk && bulk.blocked) return renderBulk();
+    var row = ui && $('.bulk-row[data-idx="' + idx + '"]', ui);
+    if (!row) return renderBulk();
+    row.outerHTML = bulkRowHTML(bulk.items[idx], idx);
+    renderBulkStatus();
+  }
+
+  function renderBulkStatus() {
+    if (!ui || !bulk) return;
+    var items = bulk.items.filter(function (it) { return it.status !== 'removed'; });
+    var ready = items.filter(function (it) { return it.status === 'ok'; }).length;
+    var working = items.filter(function (it) { return it.status === 'queued' || it.status === 'working'; }).length;
+    var st = $('[data-el=bstatus]', ui), btn = $('[data-act=bsave]', ui);
+    st.textContent = bulk.blocked ? (items.length ? items.length + ' waiting' : '')
+      : working ? 'Identifying ' + (items.length - working + 1) + ' / ' + items.length + '…' : (ready ? ready + ' ready' : '');
+    btn.disabled = !ready || working > 0;
+    btn.textContent = ready ? 'Save all (' + ready + ')' : 'Save all';
+  }
+
+  function bulkInput(e) {
+    var f = e.target.dataset.f, row = e.target.closest('.bulk-row');
+    if (!f || !row) return;
+    var it = bulk.items[+row.dataset.idx];
+    it[f] = e.target.value;
+    if (f === 'price' && e.target.value) { it.missing = false; e.target.classList.remove('missing'); }
+  }
+
+  function bulkClick(e) {
+    var t = e.target.closest('[data-act],[data-edit],[data-remove]');
+    if (!t) return;
+    if (t.dataset.act === 'bclose') {
+      var unsaved = bulk.items.some(function (it) { return it.status === 'ok'; });
+      if (!unsaved || global.confirm('Discard these cards without saving?')) closeBulk();
+    } else if (t.dataset.act === 'bsave') {
+      bulkSave();
+    } else if (t.dataset.act === 'bsetup') {
+      if (bulk.startSetup) bulk.startSetup();
+    } else if (t.dataset.edit) {
+      var idx = +t.dataset.edit, it = bulk.items[idx];
+      view = Object.assign({}, it.view);   // a copy: Back must leave the row untouched
+      view.bulkIndex = idx;
+      view.mode = 'main';
+      renderSheet();
+    } else if (t.dataset.remove) {
+      var i = +t.dataset.remove;
+      bulk.items[i].status = 'removed';
+      var row = $('.bulk-row[data-idx="' + i + '"]', ui);
+      if (row) row.remove();
+      renderBulkStatus();
+    }
+  }
+
+  function bulkSave() {
+    var items = bulk.items.filter(function (it) { return it.status === 'ok'; });
+    var missing = 0;
+    items.forEach(function (it) {
+      it.missing = !String(it.price || '').trim();
+      if (it.missing) missing++;
+    });
+    if (missing) {
+      renderBulk();
+      var first = $('.bulk-fields input.missing', ui);
+      if (first) { first.scrollIntoView({ block: 'center' }); first.focus(); }
+      $('[data-el=bstatus]', ui).textContent = missing + (missing === 1 ? ' card needs' : ' cards need') + ' a price';
+      return;
+    }
+    var out = items.map(function (it) {
+      view = it.view;                      // logScan reads the row's match details
+      logScan(it.record, it.printing);
+      view = null;
+      return { record: it.record, printing: it.printing, graded: it.graded, photoBlob: it.photoBlob,
+               price: String(it.price).replace(/[^0-9.]/g, ''), condition: it.condition,
+               grader: it.graded ? it.grader : '', grade: it.graded ? it.grade : '' };
+    });
+    var onSave = bulk.onSave;
+    closeBulk();
+    if (onSave) onSave(out);
+  }
+
+  function closeBulk() {
+    if (bulk) bulk.items.forEach(function (it) { if (it.thumbURL) URL.revokeObjectURL(it.thumbURL); });
+    bulk = null; bulkBusy = false; view = null;
+    if (ui) ui.remove();
+    ui = null;
+    if (global.ScanEngine) global.ScanEngine.setPaused(false);
+  }
+
   /* Scan a still image (canvas or loaded <img>) with the open scanner: the
    * Photo button's path, also used by the local test page. */
   function scanImage(el) {
@@ -703,7 +1043,8 @@
   }
 
   global.CardLogScanner = {
-    mountStatus: mountStatus, open: open, sync: startSync, refreshStatus: refreshStatus, scanImage: scanImage,
+    mountStatus: mountStatus, open: open, openBulk: openBulk, sync: startSync, refreshStatus: refreshStatus, scanImage: scanImage,
+    addBulkFiles: function (files) { if (bulk) bulkAddFiles(Array.prototype.slice.call(files)); },   // same path as the picker
     isReady: function () { return !!(E && ui); }
   };
 })(window);

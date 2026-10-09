@@ -493,6 +493,7 @@
       <div id="outbox-banner" class="banner hidden" style="display:flex;align-items:center;justify-content:space-between;gap:10px;"></div>
       <div id="scan-row" style="margin-bottom:14px;">
         <button type="button" id="scan-btn" class="btn btn-primary btn-block">📷 Scan card</button>
+        <button type="button" id="bulk-btn" class="btn btn-ghost btn-block" style="margin-top:8px;">🖼 Bulk add from photos</button>
         <div id="scan-status" style="margin-top:8px;"></div>
         <div id="scan-match" class="scan-match hidden">
           <span id="scan-match-text"></span>
@@ -2004,7 +2005,10 @@
             var body = { card: item.card, front: item.front };
             if (item.back) body.back = item.back;
             return api('addCard', body).then(function (r) {
-              if (r && r.ok) { sent++; return outboxDelete(item.card.id).then(function () { return false; }); }
+              if (r && r.ok) {
+                sent++;
+                return outboxDelete(item.card.id).then(function () { renderOutbox(); return false; });   // live countdown
+              }
               return true;
             }, function () { return true; });
           });
@@ -2045,6 +2049,51 @@
     loadScannerUI().then(function (sc) { sc.open({ onConfirm: applyScanResult }); })
       .catch(function () { toast('Scanner could not load. Check connection.'); });
   });
+
+  $('bulk-btn').addEventListener('click', function () {
+    loadScannerUI().then(function (sc) { sc.openBulk({ onSave: saveBulk }); })
+      .catch(function () { toast('Scanner could not load. Check connection.'); });
+  });
+
+  // Bulk add: every reviewed card goes into the offline outbox (same path as
+  // a save without signal), then uploads one by one with duplicate checks.
+  function saveBulk(list) {
+    var n = 0;
+    toast('Saving ' + list.length + ' cards…');
+    return list.reduce(function (p, item) {
+      return p.then(function () {
+        var r = item.record;
+        var card = {
+          id: genId(),
+          name: r.name,
+          set: r.set_name === 'Base' ? 'Base Set' : r.set_name,
+          number: /^\d+$/.test(r.number) && r.printed_total ? r.number + '/' + r.printed_total : r.number,
+          variant: item.printing ? item.printing.label : '',
+          cardType: item.graded ? 'Graded' : 'Raw',
+          condition: item.graded ? '' : (item.condition || 'NM'),
+          grader: item.graded ? item.grader : '',
+          grade: item.graded ? item.grade : '',
+          cert: '',
+          language: 'English',
+          price: item.price,
+          cost: '',
+          notes: '',
+          tcgId: r.id
+        };
+        return (item.photoBlob ? blobToBase64(item.photoBlob) : Promise.resolve(null)).then(function (b64) {
+          var payload = { card: card };
+          if (b64) payload.front = { mime: 'image/jpeg', b64: b64 };
+          return queueCard(payload);
+        }).then(function () { n++; });
+      });
+    }, Promise.resolve()).then(function () {
+      toast('Saved ' + n + ' cards on this device ✓ Uploading…', 4000);
+      flushOutbox(true);
+    }, function () {
+      toast('Saved ' + n + ' of ' + list.length + ' cards. Storage problem: try again for the rest.', 6000);
+      renderOutbox();
+    });
+  }
 
   function setScanMatch(m) {
     state.scanTcgId = m ? m.id : '';
