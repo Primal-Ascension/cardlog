@@ -466,7 +466,9 @@
   .trade-item .ti-info { flex: 1; min-width: 0; }
   .trade-item .ti-name { font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .trade-item .ti-sub { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .trade-item .ti-sub a { color: var(--accent); text-decoration: none; }
+  .trade-item .ti-name-row { display: flex; align-items: center; gap: 6px; }
+  .trade-item .ti-name-row .ti-name { flex: 1 1 auto; min-width: 0; }
+  .trade-item .ti-ebay { flex: 0 0 auto; font-size: 11px; font-weight: 700; color: var(--accent); text-decoration: none; white-space: nowrap; }
   .trade-item input { width: 78px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 8px; color: var(--text); text-align: right; }
   .trade-item input.empty { border-color: var(--orange); }
   .trade-item .ti-x { background: none; border: none; color: var(--muted); font-size: 16px; padding: 0 2px; }
@@ -2328,11 +2330,13 @@
   function tradeItemHTML(side, it, i) {
     var thumb = it.thumb ? '<img src="' + esc(it.thumb) + '" alt="" loading="lazy" onerror="this.style.visibility=\'hidden\'">'
       : '<div class="ti-ph">🃏</div>';
-    var comps = it.ebay ? ' · <a href="' + esc(it.ebay) + '" target="_blank" rel="noopener">🔎 eBay sold</a>' : '';
+    // On the name line, pinned right: a long description can't push it out of view.
+    var comps = it.ebay ? '<a class="ti-ebay" href="' + esc(it.ebay) + '" target="_blank" rel="noopener" title="eBay sold listings">🔎 eBay</a>' : '';
     var paid = showProfit && side === 'give'
       ? ' · <b style="color:var(--accent)">paid ' + (it.cost !== undefined && it.cost !== '' ? money2(num(it.cost)) : '?') + '</b>' : '';
     return '<div class="trade-item">' + thumb +
-      '<div class="ti-info"><div class="ti-name">' + esc(it.name) + '</div><div class="ti-sub">' + esc(it.detail || '') + paid + comps + '</div></div>' +
+      '<div class="ti-info"><div class="ti-name-row"><span class="ti-name">' + esc(it.name) + '</span>' + comps + '</div>' +
+      '<div class="ti-sub">' + esc(it.detail || '') + paid + '</div></div>' +
       '<input inputmode="decimal" placeholder="$" value="' + esc(it.value) + '" data-side="' + side + '" data-i="' + i + '"' + (String(it.value).trim() ? '' : ' class="empty"') + '>' +
       '<button type="button" class="ti-x" data-del-side="' + side + '" data-i="' + i + '" aria-label="Remove">✕</button></div>';
   }
