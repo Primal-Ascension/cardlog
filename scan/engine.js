@@ -20,7 +20,15 @@
     'scan/lib/ort.webgpu.min.js': 'ort-1.30.0',
     'scan/lib/ort-wasm-simd-threaded.asyncify.mjs': 'ort-1.30.0',
     'scan/lib/ort-wasm-simd-threaded.asyncify.wasm': 'ort-1.30.0',
-    'scan/lib/opencv.js': 'opencv-4.9.0'
+    'scan/lib/opencv.js': 'opencv-4.9.0',
+    // Slab label OCR (scan/label.js). Optional: downloaded with tier 1 but not
+    // needed to scan, so a phone set up before these existed stays ready and
+    // picks them up in its next background update.
+    'scan/lib/tesseract/tesseract.min.js': 'tesseract-6.0.1',
+    'scan/lib/tesseract/worker.min.js': 'tesseract-6.0.1',
+    'scan/lib/tesseract/tesseract-core-simd-lstm.wasm.js': 'tesseract-core-6.0.0',
+    'scan/lib/tesseract/tesseract-core-lstm.wasm.js': 'tesseract-core-6.0.0',
+    'scan/lib/tesseract/eng.traineddata.gz': 'tessdata-eng-4.0.0-best-int'
   };
 
   var BASE = new URL('./', global.location.href).href;   // the app's folder, e.g. https://x.github.io/cardlog/
@@ -51,7 +59,9 @@
       var f = manifest.files[p];
       (f.tier === 2 ? t2 : t1).push({ path: DATA + p, sha: f.sha256, bytes: f.bytes });
     });
-    Object.keys(LIB_FILES).forEach(function (p) { t1.push({ path: p, sha: LIB_FILES[p], bytes: 0 }); });
+    Object.keys(LIB_FILES).forEach(function (p) {
+      t1.push({ path: p, sha: LIB_FILES[p], bytes: 0, optional: p.indexOf(LIB + 'tesseract/') === 0 });
+    });
     return { t1: t1, t2: t2 };
   }
 
@@ -62,6 +72,7 @@
         var manifest = r[0], synced = r[1] || {};
         if (!manifest) return { ready: false, tier1: [0, 0], tier2: [0, 0], manifest: null };
         var l = fileLists(manifest);
+        l.t1 = l.t1.filter(function (f) { return !f.optional; });
         var c1 = l.t1.filter(function (f) { return synced[f.path] === f.sha; }).length;
         var c2 = l.t2.filter(function (f) { return synced[f.path] === f.sha; }).length;
         return { ready: c1 === l.t1.length, tier1: [c1, l.t1.length], tier2: [c2, l.t2.length],

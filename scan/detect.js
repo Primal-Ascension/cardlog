@@ -262,6 +262,26 @@
             [tr[0] + (tr[0] - br[0]) * k, tr[1] + (tr[1] - br[1]) * k], br, bl];
   }
 
+  /* Quad of a grading label: the band above the card, from its top edge up
+   * to the slab's top (or 30% of the card height without one), a little
+   * wider than the card. Returns { quad, w, h } with w x h the band's
+   * proportions, for warping it upright. */
+  function labelQuad(card, slab) {
+    var tl = card[0], tr = card[1], br = card[2], bl = card[3];
+    var sz = quadSize(card), k1 = 0.30;
+    if (slab) {
+      var sb = bounds(slab), cb = bounds(card);
+      k1 = Math.min(0.42, Math.max(0.14, (cb.y0 - sb.y0) / (cb.y1 - cb.y0)));
+    }
+    var k0 = -0.01, wx = 0.09;     // PSA labels are wider than the card
+    function at(p, q, k, side) {   // p: a top corner, q: the bottom corner below it
+      var ux = p[0] - q[0], uy = p[1] - q[1], rx = (tr[0] - tl[0]) * wx * side, ry = (tr[1] - tl[1]) * wx * side;
+      return [p[0] + ux * k + rx, p[1] + uy * k + ry];
+    }
+    return { quad: [at(tl, bl, k1, -1), at(tr, br, k1, 1), at(tr, br, k0, 1), at(tl, bl, k0, -1)],
+             w: sz.w * (1 + 2 * wx), h: sz.h * (k1 - k0) };
+  }
+
   /* Warp the quad region of an RGBA Mat to a w x h portrait card (RGBA Mat). */
   function warpCard(cv, rgba, quad, w, h) {
     w = w || CARD_W; h = h || CARD_H;
@@ -283,6 +303,6 @@
   global.CardDetect = {
     CARD_W: CARD_W, CARD_H: CARD_H,
     findCardQuad: findCardQuad, findCardAndSlab: findCardAndSlab, slabPhotoQuad: slabPhotoQuad,
-    warpCard: warpCard, fallbackCard: fallbackCard, quadSize: quadSize
+    warpCard: warpCard, fallbackCard: fallbackCard, quadSize: quadSize, labelQuad: labelQuad
   };
 })(window);

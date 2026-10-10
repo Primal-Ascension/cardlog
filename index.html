@@ -2386,7 +2386,7 @@
           condition: item.graded ? '' : (item.condition || 'NM'),
           grader: item.graded ? item.grader : '',
           grade: item.graded ? item.grade : '',
-          cert: '',
+          cert: item.graded ? item.cert || '' : '',
           language: 'English',
           price: item.price,
           cost: '',
@@ -2693,7 +2693,8 @@
         var c = a.it.card || { name: a.it.name };
         var card = {
           id: genId(), name: c.name, set: c.set || '', number: c.number || '', variant: c.variant || '',
-          cardType: c.graded ? 'Graded' : 'Raw', condition: c.graded ? '' : 'NM', grader: '', grade: '', cert: '',
+          cardType: c.graded ? 'Graded' : 'Raw', condition: c.graded ? '' : 'NM',
+          grader: c.graded ? c.grader || '' : '', grade: c.graded ? c.grade || '' : '', cert: c.graded ? c.cert || '' : '',
           language: 'English', price: a.ask, cost: String(a.paid), notes: 'From trade ' + today, tcgId: a.it.tcgId || ''
         };
         return queueCard({ card: card, front: { mime: 'image/jpeg', b64: b64 } });
@@ -2814,7 +2815,17 @@
         var stored = res.photoBlob
           ? photoPut('trade:' + item.id, res.photoBlob).then(function () { item.hasPhoto = true; }).catch(function () {})
           : Promise.resolve();
+        // Slab label read late: kept for "Complete trade" (grader, grade, cert).
+        var withLabel = function (l) {
+          if (!l) return;
+          item.card.grader = GRADER_LOGOS[l.grader] ? l.grader : '';
+          item.card.grade = l.grade || ''; item.card.cert = l.cert || '';
+          var gg = [item.card.grader, item.card.grade].filter(Boolean).join(' ');
+          if (gg) item.detail += ' ' + gg;
+          saveTrade(); renderTrade();
+        };
         stored.then(function () {
+          if (res.label) withLabel(res.label); else if (res.labelP) res.labelP.then(withLabel);
           addTradeItem(side, item);
           showTab('trade');
           toast('Added ' + r.name + '. Enter its value.');
@@ -3258,14 +3269,35 @@
     if (res.printing) setVariant(res.printing.label);
     $('f-language').value = 'English';
     // Slab detected (or Graded picked in the popup): Graded shows the grader,
-    // grade and cert fields; those stay manual until label reading exists.
+    // grade and cert fields, filled from the slab label when it was read.
     setCardType(res.graded ? 'Graded' : 'Raw');
+    if (res.graded) {
+      $('f-grade').value = ''; $('f-cert').value = '';   // grader keeps its remembered value
+      var before = labelFields();
+      if (res.label) applyLabel(res.label, before);
+      else if (res.labelP) res.labelP.then(function (l) { if (l && state.cardType === 'Graded') applyLabel(l, before); });
+    }
     setScanMatch({ id: r.id, text: 'Scanned: ' + r.name + ' · ' + setName + ' ' + number +
       (res.printing ? ' · ' + res.printing.label : '') + (res.graded ? ' · Graded' : '') });
     // Use the straightened scan as the front photo unless one was already taken.
     if (res.photoBlob && !state.frontBlob && !state.editingId) setFrontPhoto(res.photoBlob);
     $('name-error').classList.add('hidden');
-    if (res.graded) $('f-grader').focus(); else $('f-price').focus();
+    if (res.graded) (res.label && res.label.grade ? $('f-price') : $('f-grader')).focus(); else $('f-price').focus();
+  }
+
+  function labelFields() {
+    return { grader: $('f-grader').value, grade: $('f-grade').value, cert: $('f-cert').value };
+  }
+
+  /* Fill grader/grade/cert read off a slab label. A field is only replaced
+   * if it still holds what it did when the scan was applied (before), so a
+   * read that finishes late never overwrites something typed meanwhile. */
+  function applyLabel(l, before) {
+    var now = labelFields(), filled = [];
+    if (l.grader && GRADER_LOGOS[l.grader] && now.grader === before.grader) { $('f-grader').value = l.grader; filled.push(l.grader); }
+    if (l.grade && now.grade === before.grade) { $('f-grade').value = l.grade; filled.push(l.grade); }
+    if (l.cert && now.cert === before.cert) { $('f-cert').value = l.cert; filled.push('cert ' + l.cert); }
+    if (filled.length) toast('From the label: ' + filled.join(' ') + '. Check it matches.', 3500);
   }
 
   // ============================================================

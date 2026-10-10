@@ -11,7 +11,7 @@
 (function (global) {
   'use strict';
 
-  var SCRIPTS = ['scan/detect.js', 'scan/engine.js'];
+  var SCRIPTS = ['scan/detect.js', 'scan/engine.js', 'scan/label.js'];
   var CONFIDENT = 0.65;          // below: "No confident match" (tuned on the owner's 41 photos)
   var STABLE_MS = 300;           // outline must hold still this long to auto-capture
   var STABLE_TOL = 0.025;        // corner movement allowed, as a fraction of card height
@@ -30,7 +30,7 @@
 
   var depsLoading = null;
   function loadDeps() {
-    if (global.ScanEngine && global.CardDetect) return Promise.resolve();
+    if (global.ScanEngine && global.CardDetect && global.CardLabel) return Promise.resolve();
     if (depsLoading) return depsLoading;
     depsLoading = SCRIPTS.reduce(function (p, src) {
       return p.then(function () {
@@ -80,6 +80,7 @@
     '.scan-tile .nm img{width:14px;height:14px;object-fit:contain;flex:0 0 auto}',
     '.scan-tile .yr{font-size:10px;color:var(--muted,#8888aa)}',
     '.scan-chips{display:flex;gap:8px;flex-wrap:wrap}',
+    '.scan-labelread{margin-top:8px;font-size:13px;color:#ddd}',
     '.scan-chip{padding:9px 13px;border-radius:20px;border:1px solid var(--border,#2a2a4a);background:var(--bg,#1a1a2e);color:#ddd;font-size:13px;font-weight:700}',
     '.scan-chip.sel{background:var(--accent,#f5c518);color:#16213e;border-color:var(--accent,#f5c518)}',
     '.scan-actions{display:flex;gap:10px;margin-top:16px}',
@@ -434,6 +435,7 @@
     var card = quad ? global.CardDetect.warpCard(cv, src, quad) : global.CardDetect.fallbackCard(cv, src);
     var slabQuad = quad && slab ? global.CardDetect.slabPhotoQuad(quad, slab, slabKind) : null;
     var photoBlobP = makePhotos(cv, src, quad, slabQuad);
+    var labelImage = slabQuad ? makeLabelImage(cv, src, quad, slab) : null;
     var tDetect = performance.now() - t0;
     setStage('Reading card (' + backendName() + ')');
     return global.ScanEngine.embed(E, [card]).then(function (q1) {
@@ -453,7 +455,7 @@
       var ms = performance.now() - t0;
       return photoBlobP.then(function (photos) {
         return { top: r.top, ms: ms, detectMs: tDetect, detected: !!quad, rotated: r.rotated,
-                 photos: photos, slabKind: slabQuad ? slabKind : null };
+                 photos: photos, slabKind: slabQuad ? slabKind : null, labelImage: labelImage };
       });
     }, function (e) {
       try { card.delete(); src.delete(); } catch (x) {}
@@ -486,6 +488,48 @@
     }
     return Promise.all([toBlob(raw), toBlob(graded)]).then(function (b) { return { raw: b[0], graded: b[1] }; });
   }
+
+  /* The grading label above the card, straightened, at the photo's own
+   * resolution (capped at 1600 px wide), as a canvas for CardLabel.read. */
+  function makeLabelImage(cv, src, quad, slab) {
+    try {
+      var lq = global.CardDetect.labelQuad(quad, slab);
+      var w = Math.min(1600, Math.round(lq.w)), h = Math.max(1, Math.round(w * lq.h / lq.w));
+      var m = global.CardDetect.warpCard(cv, src, lq.quad, w, h), c = document.createElement('canvas');
+      cv.imshow(c, m); m.delete();
+      return c;
+    } catch (e) { return null; }
+  }
+
+  /* Read the label of a graded scan in the background; done(label) gets
+   * { grader, grade, cert } (empty strings for what couldn't be read) or
+   * null when there's no label or OCR failed. Memoized on the scan result. */
+  function readLabel(res, done) {
+    if (!res || !res.labelImage || !global.CardLabel) { done(null); return; }
+    if (!res.labelP) {
+      res.labelP = global.CardLabel.read(res.labelImage).then(function (l) {
+        return l.grader || l.grade || l.cert || l.other ? l : null;
+      }, function (e) { res.labelError = String(e && e.message || e); return null; });
+    }
+    res.labelP.then(done);
+  }
+
+  /* Start reading view v's label; the popup redraws when it's done. */
+  function startLabel(v) {
+    if (!v || !v.res || !v.res.labelImage) return;
+    readLabel(v.res, function (l) {
+      v.label = l;
+      if (view === v && v.mode === 'main' && ui) renderSheet();
+    });
+  }
+
+  function labelText(l) {
+    if (!l) return 'Label not readable: enter grader and grade by hand';
+    if (l.other) return 'Label from a grader not in your list';
+    return '🏷 ' + [l.grader || 'Grader ?', l.grade || 'grade ?', l.cert ? '· cert ' + l.cert : ''].filter(Boolean).join(' ');
+  }
+
+  function usableLabel(l) { return l && !l.other ? l : null; }
 
   /* ---------------- popup ---------------- */
   var view = null;   // { top, selected (record index), printingIdx, confident, ... }
@@ -546,6 +590,7 @@
   function showResult(res) {
     view = makeView(res);
     renderSheet();
+    startLabel(view);
   }
 
   /* What the current selection resolves to: the card record, printing,
@@ -557,8 +602,12 @@
     view = saved;
     var printing = c.chip ? { code: c.chip.code, label: PRINTING_LABELS[c.chip.code] || c.chip.label } : null;
     var photos = (v.res && v.res.photos) || {};
+    var res = v.res || {};
     return { record: c.record, printing: printing, graded: !!v.graded,
-             photoBlob: (v.graded ? photos.graded : photos.raw) || null };
+             photoBlob: (v.graded ? photos.graded : photos.raw) || null,
+             // label: read already; labelP: resolves with it when the read is still running
+             label: v.graded ? usableLabel(v.label) : null,
+             labelP: v.graded && res.labelP ? res.labelP.then(usableLabel) : null };
   }
 
   function selectCard(i, fromTop) {
@@ -619,6 +668,9 @@
     html += '<div class="scan-label">Type' + (view.gradedDefault ? ' · slab detected' : '') + '</div><div class="scan-chips">' +
       '<button class="scan-chip' + (!view.graded ? ' sel' : '') + '" data-type="raw">Raw</button>' +
       '<button class="scan-chip' + (view.graded ? ' sel' : '') + '" data-type="graded">Graded</button></div>';
+    if (view.graded && res.labelImage) {
+      html += '<div class="scan-labelread">' + (view.label === undefined ? '🔎 Reading the label…' : esc(labelText(view.label))) + '</div>';
+    }
     html += '<div class="scan-actions"><button class="scan-again" data-act2="again">' + (view.bulkIndex != null ? 'Back' : 'Rescan') +
       '</button><button class="scan-ok" data-act2="ok">Confirm</button></div>';
     html += '<button class="scan-more" data-act2="more">' + (view.showTop ? 'Hide' : 'Not it?') + ' Top 5 matches</button>';
@@ -742,6 +794,7 @@
     '.bulk-fields select,.bulk-fields input{background:var(--bg,#1a1a2e);border:1px solid var(--border,#2a2a4a);color:#fff;border-radius:8px;padding:8px;font-size:16px}',
     '.bulk-fields input[data-f=price]{width:96px}.bulk-fields input[data-f=grade]{width:70px}',
     '.bulk-fields input.missing{border-color:var(--orange,#e67e22)}',
+    '.bulk-lab{font-size:11px;color:var(--muted,#8888aa);margin-top:5px}',
     '.bulk-x{background:none;border:none;color:#888;font-size:18px;padding:0 4px}',
     '.bulk-save{background:var(--accent,#f5c518);color:#16213e;border:none;border-radius:10px;padding:13px 18px;font-weight:800;font-size:15px}',
     '.bulk-save:disabled{opacity:.4}',
@@ -826,7 +879,7 @@
       it.view = makeView(res);
       it.status = 'ok';
       bulkApplyFields(it);
-      if (it.view.graded) it.grader = GRADERS[0];
+      if (it.view.graded) { it.grader = GRADERS[0]; bulkLabel(it, idx); }
     }).catch(function (e) {
       it.status = 'failed';
       it.error = String(e && e.message || e);
@@ -864,6 +917,34 @@
     }
   }
 
+  /* Read a bulk row's slab label in the background and fill grader, grade
+   * and cert, leaving anything the owner already changed. Updates the row's
+   * fields in place so typing in another field isn't interrupted. */
+  function bulkLabel(it, idx) {
+    it.labelReading = true;
+    readLabel(it.view.res, function (l) {
+      it.labelReading = false;
+      it.view.label = l;
+      var u = usableLabel(l), row = ui && $('.bulk-row[data-idx="' + idx + '"]', ui);
+      if (u) {
+        if (u.grader && !it.graderTouched) it.grader = u.grader;
+        if (u.grade && !String(it.grade || '').trim()) it.grade = u.grade;
+        if (u.cert) it.cert = u.cert;
+      }
+      if (!row || !it.graded) return;
+      var g = $('[data-f=grader]', row), gr = $('[data-f=grade]', row), lab = $('.bulk-lab', row);
+      if (g && document.activeElement !== g) g.value = it.grader;
+      if (gr && document.activeElement !== gr) gr.value = it.grade || '';
+      if (lab) lab.textContent = bulkLabelText(it);
+    });
+  }
+
+  function bulkLabelText(it) {
+    if (it.labelReading) return '🔎 Reading the label…';
+    if (!it.view.res.labelImage) return '';
+    return it.cert ? 'Cert ' + it.cert + ' (from the label)' : labelText(it.view.label);
+  }
+
   /* Copy the chosen card, printing, type and photo from the row's view. */
   function bulkApplyFields(it) {
     var r = resultOf(it.view);
@@ -881,8 +962,13 @@
     if (!it) return;
     delete v.bulkIndex;
     v.confident = true;   // the owner confirmed this match: no more "Check"
+    var wasGraded = it.graded;
     it.view = v;
     bulkApplyFields(it);
+    if (it.graded && !wasGraded) {
+      if (!it.grader) it.grader = GRADERS[0];
+      if (v.res.labelImage) bulkLabel(it, idx);
+    }
     renderBulkRow(idx);
   }
 
@@ -906,7 +992,8 @@
       (it.thumbURL ? '<img class="ph" src="' + it.thumbURL + '" alt="">' : '') +
       '<div class="bulk-info"><button class="bulk-card" data-edit="' + idx + '">' + esc(r.name) + (conf ? '' : '<span class="bulk-check">Check</span>') +
       '<span>' + esc(r.set_name) + ' · ' + esc(num) + (it.printing ? ' · ' + esc(it.printing.label) : '') + ' · ' + (it.graded ? 'Graded' : 'Raw') + ' · tap to change</span></button>' +
-      '<div class="bulk-fields">' + fields + '</div></div>' +
+      '<div class="bulk-fields">' + fields + '</div>' +
+      (it.graded && it.view.res.labelImage ? '<div class="bulk-lab">' + esc(bulkLabelText(it)) + '</div>' : '') + '</div>' +
       '<button class="bulk-x" data-remove="' + idx + '" aria-label="Remove">✕</button></div>';
   }
 
@@ -965,6 +1052,7 @@
     if (!f || !row) return;
     var it = bulk.items[+row.dataset.idx];
     it[f] = e.target.value;
+    if (f === 'grader') it.graderTouched = true;
     if (f === 'price' && e.target.value) { it.missing = false; e.target.classList.remove('missing'); }
   }
 
@@ -984,6 +1072,7 @@
       view.bulkIndex = idx;
       view.mode = 'main';
       renderSheet();
+      startLabel(view);
     } else if (t.dataset.remove) {
       var i = +t.dataset.remove;
       bulk.items[i].status = 'removed';
@@ -1013,7 +1102,7 @@
       view = null;
       return { record: it.record, printing: it.printing, graded: it.graded, photoBlob: it.photoBlob,
                price: String(it.price).replace(/[^0-9.]/g, ''), condition: it.condition,
-               grader: it.graded ? it.grader : '', grade: it.graded ? it.grade : '' };
+               grader: it.graded ? it.grader : '', grade: it.graded ? it.grade : '', cert: it.graded ? it.cert || '' : '' };
     });
     var onSave = bulk.onSave;
     closeBulk();

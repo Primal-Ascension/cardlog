@@ -10,6 +10,7 @@ poc/results/**/warped/
 
 # Local scanner test page (loads the gitignored owner photos) and local dev-server config
 dev-scan.html
+dev-label.html
 .claude/
 
 # Build cache normally lives in %LOCALAPPDATA%\cardlog-cache; ignore it if redirected here

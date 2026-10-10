@@ -13,7 +13,7 @@
 
 var SHELL = 'cardlog-shell-v1';
 var SCANNER = 'cardlog-scanner-v1';
-var SHELL_FILES = ['./', 'index.html', 'icon-180.png', 'scan/scanner.js', 'scan/engine.js', 'scan/detect.js',
+var SHELL_FILES = ['./', 'index.html', 'icon-180.png', 'scan/scanner.js', 'scan/engine.js', 'scan/detect.js', 'scan/label.js',
                    'img/graders/psa.svg', 'img/graders/cgc.svg', 'img/graders/tag.png', 'img/graders/bgs.svg'];
 var NETWORK_TIMEOUT_MS = 3500;
 
