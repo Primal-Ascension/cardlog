@@ -261,6 +261,7 @@
       return global.ScanEngine.load(function (step) { var p = ui && $('[data-el=step]', ui); if (p) p.textContent = step + '…'; });
     }).then(function (engine) {
       E = engine;
+      preloadStamp();
       if (!ui) return;
       hideMessage();
       $('[data-el=badge]', ui).textContent = E.backend === 'webgpu' ? 'GPU' : 'CPU';
@@ -436,6 +437,7 @@
     var slabQuad = quad && slab ? global.CardDetect.slabPhotoQuad(quad, slab, slabKind) : null;
     var photoBlobP = makePhotos(cv, src, quad, slabQuad);
     var labelImage = slabQuad ? makeLabelImage(cv, src, quad, slab) : null;
+    var stamp = quad ? firstEditionStamp(cv, src, quad) : null;
     var tDetect = performance.now() - t0;
     setStage('Reading card (' + backendName() + ')');
     return global.ScanEngine.embed(E, [card]).then(function (q1) {
@@ -455,7 +457,8 @@
       var ms = performance.now() - t0;
       return photoBlobP.then(function (photos) {
         return { top: r.top, ms: ms, detectMs: tDetect, detected: !!quad, rotated: r.rotated,
-                 photos: photos, slabKind: slabQuad ? slabKind : null, labelImage: labelImage };
+                 photos: photos, slabKind: slabQuad ? slabKind : null, labelImage: labelImage,
+                 stamp: stamp };
       });
     }, function (e) {
       try { card.delete(); src.delete(); } catch (x) {}
@@ -487,6 +490,29 @@
       graded = frame();
     }
     return Promise.all([toBlob(raw), toBlob(graded)]).then(function (b) { return { raw: b[0], graded: b[1] }; });
+  }
+
+  /* 1st Edition stamp templates, loaded once the engine (OpenCV) is up. */
+  var stampTemplates = null;
+  function preloadStamp() {
+    if (stampTemplates || !E || !E.cv) return;
+    global.CardDetect.loadStampTemplates(E.cv).then(function (t) { stampTemplates = t; }, function () {});
+  }
+
+  /* { score, found } for the 1st Edition stamp, checking the card upside
+   * down too; null when the templates aren't loaded. */
+  function firstEditionStamp(cv, src, quad) {
+    if (!stampTemplates) { preloadStamp(); return null; }
+    var c = global.CardDetect.warpCard(cv, src, quad, 1000, 1397), score = 0;
+    try {
+      score = global.CardDetect.stampScore(cv, c, stampTemplates);
+      if (score < global.CardDetect.STAMP_MIN) {
+        cv.flip(c, c, -1);   // 180 degrees
+        score = Math.max(score, global.CardDetect.stampScore(cv, c, stampTemplates));
+      }
+    } catch (e) { score = 0; }
+    c.delete();
+    return { score: Math.round(score * 1000) / 1000, found: score >= global.CardDetect.STAMP_MIN };
   }
 
   /* The grading label above the card, straightened, at the photo's own
@@ -584,7 +610,23 @@
     };
     var p = printings(v.selected);
     v.printingIdx = v.defaultPrinting = p ? p.default : null;
+    if (stampPrinting(v, p)) v.defaultPrinting = v.printingIdx;
     return v;
+  }
+
+  /* Stamp seen: switch view v's printing to the matching 1st Edition chip
+   * (holo stays holo). Returns true when it switched. */
+  function stampPrinting(v, p) {
+    if (!p || !v.res || !v.res.stamp || !v.res.stamp.found) return false;
+    var cur = p.printings[v.printingIdx] || {}, k = -1;
+    p.printings.forEach(function (c, i) {
+      if (c.code !== '1st_edition') return;
+      if (k < 0 || (c.card === cur.card && p.printings[k].card !== cur.card)) k = i;
+    });
+    if (k < 0) return false;
+    v.printingIdx = k;
+    v.stampApplied = true;
+    return true;
   }
 
   function showResult(res) {
@@ -621,6 +663,8 @@
       var k = p.printings.findIndex(function (c) { return c.card === recOf(i).id && !c.optional; });
       if (k >= 0) view.printingIdx = k;
     }
+    view.stampApplied = false;
+    stampPrinting(view, p);
     view.mode = 'main';
     renderSheet();
   }
@@ -659,7 +703,7 @@
     html += '</div>';
     var p = printings(view.selected);
     if (p) {
-      html += '<div class="scan-label">Printing</div><div class="scan-chips">';
+      html += '<div class="scan-label">Printing' + (view.stampApplied ? ' · 1st Edition stamp detected' : '') + '</div><div class="scan-chips">';
       p.printings.forEach(function (c, k) {
         html += '<button class="scan-chip' + (k === view.printingIdx ? ' sel' : '') + '" data-chip="' + k + '">' + esc(c.label) + '</button>';
       });
@@ -765,7 +809,8 @@
         chosen: r.id, printing: printing && printing.code,
         keptDefault: view.selected === view.defaultSel && view.printingIdx === view.defaultPrinting && !view.manual,
         ms: Math.round(view.res.ms || 0), detected: !!view.res.detected, how: view.res.how, backend: E.backend,
-        slab: view.res.slabKind || null, graded: !!view.graded
+        slab: view.res.slabKind || null, graded: !!view.graded,
+        stamp: view.res.stamp ? view.res.stamp.score : null
       });
       while (log.length > LOG_MAX) log.shift();
       lsSet(LOG_KEY, JSON.stringify(log));
@@ -844,6 +889,7 @@
       return global.ScanEngine.load();
     }).then(function (engine) {
       E = engine;
+      preloadStamp();
       if (!bulk) return;
       bulk.blocked = null;
       if (ui) $('[data-el=badge]', ui).textContent = backendName();

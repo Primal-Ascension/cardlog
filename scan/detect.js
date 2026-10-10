@@ -282,6 +282,60 @@
              w: sz.w * (1 + 2 * wx), h: sz.h * (k1 - k0) };
   }
 
+  /* ---------------- 1st Edition stamp ----------------
+   * WOTC-era cards print the stamp left of the species bar, just under the
+   * art box. Three stamps cut from catalog scans (at 1000 px card width) are
+   * matched at five scales in that corner of a 1000 x 1397 straightened card.
+   * On the owner's 30 photos: stamped 0.93-0.98, unstamped 0.55 at most. */
+  var STAMP_FILES = ['scan/img/stamp-1st-1.png', 'scan/img/stamp-1st-2.png', 'scan/img/stamp-1st-3.png'];
+  var STAMP_WIN = [0.0, 0.50, 0.26, 0.64], STAMP_MIN = 0.75;
+  var stampMats = null;
+
+  function loadStampTemplates(cv) {
+    if (stampMats) return stampMats;
+    stampMats = Promise.all(STAMP_FILES.map(function (f) {
+      return new Promise(function (resolve, reject) {
+        var img = new Image();
+        img.onload = function () {
+          var c = document.createElement('canvas');
+          c.width = img.naturalWidth; c.height = img.naturalHeight;
+          c.getContext('2d').drawImage(img, 0, 0);
+          var rgba = cv.imread(c), g = new cv.Mat();
+          cv.cvtColor(rgba, g, cv.COLOR_RGBA2GRAY); rgba.delete();
+          resolve(g);
+        };
+        img.onerror = function () { reject(new Error('could not load ' + f)); };
+        img.src = new URL(f, document.baseURI).href;
+      });
+    }));
+    stampMats.catch(function () { stampMats = null; });
+    return stampMats;
+  }
+
+  /* Best match score (0-1) of the stamp templates in a 1000 x 1397 RGBA card;
+   * templates: the gray Mats from loadStampTemplates. */
+  function stampScore(cv, card, templates) {
+    var W = card.cols, H = card.rows;
+    var r = new cv.Rect(Math.round(STAMP_WIN[0] * W), Math.round(STAMP_WIN[1] * H),
+                        Math.round((STAMP_WIN[2] - STAMP_WIN[0]) * W), Math.round((STAMP_WIN[3] - STAMP_WIN[1]) * H));
+    var roi = card.roi(r), g = new cv.Mat(), res = new cv.Mat(), t = new cv.Mat(), best = 0;
+    cv.cvtColor(roi, g, cv.COLOR_RGBA2GRAY);
+    cv.GaussianBlur(g, g, new cv.Size(3, 3), 0);
+    roi.delete();
+    templates.forEach(function (tm) {
+      [0.8, 0.9, 1.0, 1.1, 1.2].forEach(function (s) {
+        var k = W / 1000 * s;
+        cv.resize(tm, t, new cv.Size(Math.round(tm.cols * k), Math.round(tm.rows * k)), 0, 0, cv.INTER_AREA);
+        if (t.cols >= g.cols || t.rows >= g.rows) return;
+        cv.matchTemplate(g, t, res, cv.TM_CCOEFF_NORMED);
+        var mm = cv.minMaxLoc(res);
+        if (mm.maxVal > best) best = mm.maxVal;
+      });
+    });
+    g.delete(); res.delete(); t.delete();
+    return best;
+  }
+
   /* Warp the quad region of an RGBA Mat to a w x h portrait card (RGBA Mat). */
   function warpCard(cv, rgba, quad, w, h) {
     w = w || CARD_W; h = h || CARD_H;
@@ -303,6 +357,7 @@
   global.CardDetect = {
     CARD_W: CARD_W, CARD_H: CARD_H,
     findCardQuad: findCardQuad, findCardAndSlab: findCardAndSlab, slabPhotoQuad: slabPhotoQuad,
-    warpCard: warpCard, fallbackCard: fallbackCard, quadSize: quadSize, labelQuad: labelQuad
+    warpCard: warpCard, fallbackCard: fallbackCard, quadSize: quadSize, labelQuad: labelQuad,
+    loadStampTemplates: loadStampTemplates, stampScore: stampScore, STAMP_MIN: STAMP_MIN
   };
 })(window);
