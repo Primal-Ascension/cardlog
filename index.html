@@ -480,6 +480,8 @@
   .trade-opts input { width: 70px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 7px; color: var(--text); text-align: right; }
   #trade-bar { padding: 10px 16px; border-bottom: 1px solid var(--border); font-size: 13px; }
   #main.with-trade-bar { padding-bottom: calc(300px + var(--safe-bottom)); }
+  #cart-bar { padding: 10px 16px; border-bottom: 1px solid var(--border); font-size: 13px; }
+  #cart-disc-mode button { padding: 9px 4px; font-size: 12px; }
   .trade-actions { display: flex; gap: 8px; margin-bottom: 10px; }
   .trade-actions .btn { flex: 1; }
   .tb-profit { margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--border); }
@@ -559,6 +561,7 @@
         <button type="button" class="home-tile" data-go="add"><span class="ht-icon">➕</span><span class="ht-title">Add card</span><span class="ht-sub">Fill in by hand</span></button>
         <button type="button" class="home-tile" data-go="bulk"><span class="ht-icon">🖼</span><span class="ht-title">Bulk add</span><span class="ht-sub">Many photos at once</span></button>
         <button type="button" class="home-tile" data-go="gallery"><span class="ht-icon">📦</span><span class="ht-title">My cards</span><span class="ht-sub" id="home-cards-sub">Inventory</span></button>
+        <button type="button" class="home-tile" data-go="checkout"><span class="ht-icon">🛒</span><span class="ht-title">Sell cards</span><span class="ht-sub" id="home-cart-sub">Bundle sale</span></button>
         <button type="button" class="home-tile" data-go="trade"><span class="ht-icon">⚖</span><span class="ht-title">Trade</span><span class="ht-sub" id="home-trade-sub">Compare a deal</span></button>
         <button type="button" class="home-tile" data-go="insights"><span class="ht-icon">📊</span><span class="ht-title">Sales &amp; insights</span><span class="ht-sub" id="home-insights-sub">Show recap, inventory</span></button>
         <button type="button" class="home-tile" data-go="settings"><span class="ht-icon">⚙</span><span class="ht-title">Settings</span><span class="ht-sub">Connection, export</span></button>
@@ -722,6 +725,45 @@
       <button type="button" id="trade-reset" class="btn btn-ghost btn-block">Start a new trade</button>
     </div>
 
+    <div id="view-checkout" class="hidden">
+      <div class="view-head"><button type="button" class="vh-back" data-home>← Home</button><span>Sell cards</span></div>
+      <div class="trade-side">
+        <div class="trade-head"><span>Cart</span><span class="trade-sub" id="cart-sum"></span></div>
+        <div id="cart-items"></div>
+        <div class="trade-add">
+          <button type="button" class="btn btn-ghost" id="cart-add">+ My cards</button>
+          <button type="button" class="btn btn-ghost" id="cart-scan">📷 Scan</button>
+        </div>
+      </div>
+      <div class="trade-side">
+        <div class="trade-head"><span>Discount</span></div>
+        <div class="segmented" id="cart-disc-mode">
+          <button type="button" data-mode="none">None</button>
+          <button type="button" data-mode="pct">% off</button>
+          <button type="button" data-mode="amt">$ off</button>
+          <button type="button" data-mode="total">Set total</button>
+        </div>
+        <div class="trade-opts" id="cart-disc-row" style="margin-top:10px">
+          <label><span id="cart-disc-label">Discount</span> <input id="cart-disc" inputmode="decimal" placeholder="0"></label>
+        </div>
+      </div>
+      <div class="trade-side">
+        <div class="trade-head"><span>Sale</span></div>
+        <div class="chip-row" id="cart-channel">
+          <button type="button" class="chip" data-val="Show">Show</button>
+          <button type="button" class="chip" data-val="Reddit">Reddit</button>
+          <button type="button" class="chip" data-val="Facebook">Facebook</button>
+          <button type="button" class="chip" data-val="eBay">eBay</button>
+          <button type="button" class="chip" data-val="Other">Other</button>
+        </div>
+        <div class="field" style="margin:4px 0 0"><input id="cart-buyer" placeholder="Buyer (optional)"></div>
+      </div>
+      <div class="trade-actions">
+        <button type="button" id="cart-profit" class="btn btn-ghost">💲 Show my profit</button>
+        <button type="button" id="cart-clear" class="btn btn-ghost">Clear cart</button>
+      </div>
+    </div>
+
     <div id="view-insights" class="hidden">
       <div class="view-head"><button type="button" class="vh-back" data-home>← Home</button><span>Sales &amp; insights</span></div>
       <div class="chip-row" id="ins-range">
@@ -763,6 +805,10 @@
       <button id="save-card-btn" class="btn btn-primary btn-block">💾 Save Card</button>
     </div>
     <div id="trade-bar" class="hidden"></div>
+    <div id="cart-bar" class="hidden">
+      <div id="cart-summary"></div>
+      <button type="button" id="cart-complete" class="btn btn-primary btn-block" style="margin-top:8px">Complete sale</button>
+    </div>
   </div>
 
   <!-- Trade: card picker / other-item sheet -->
@@ -1175,7 +1221,11 @@
     state.currentTab = tab;
     $('view-home').classList.toggle('hidden', tab !== 'home');
     if (tab === 'home') renderHome();
-    $('tabbar').classList.toggle('has-bar', tab === 'add' || tab === 'trade');
+    $('tabbar').classList.toggle('has-bar', tab === 'add' || tab === 'trade' || tab === 'checkout');
+    $('view-checkout').classList.toggle('hidden', tab !== 'checkout');
+    $('cart-bar').classList.toggle('hidden', tab !== 'checkout');
+    if (tab !== 'checkout' && cartProfit) { cartProfit = false; $('cart-profit').textContent = '💲 Show my profit'; }
+    if (tab === 'checkout') renderCart();
     $('view-add').classList.toggle('hidden', tab !== 'add');
     $('view-gallery').classList.toggle('hidden', tab !== 'gallery');
     $('view-settings').classList.toggle('hidden', tab !== 'settings');
@@ -1185,7 +1235,7 @@
     $('save-bar').classList.toggle('hidden', tab !== 'add');
     $('trade-bar').classList.toggle('hidden', tab !== 'trade');
     $('main').classList.toggle('with-save-bar', tab === 'add');
-    $('main').classList.toggle('with-trade-bar', tab === 'trade');
+    $('main').classList.toggle('with-trade-bar', tab === 'trade' || tab === 'checkout');
     if (tab !== 'trade' && showProfit) {      // profit view never stays up when you leave the tab
       showProfit = false;
       $('trade-profit').textContent = '💲 Show my profit';
@@ -1233,6 +1283,8 @@
     $('home-cards-sub').textContent = forSale + ' for sale' + (hold ? ' · ' + hold + ' on hold' : '');
     var n = trade.give.length + trade.get.length;
     $('home-trade-sub').textContent = n ? 'Trade in progress (' + n + (n === 1 ? ' card)' : ' cards)') : 'Compare a deal';
+    var m = cart.items.length;
+    $('home-cart-sub').textContent = m ? m + (m === 1 ? ' card' : ' cards') + ' in cart' : 'Bundle sale';
   }
 
   // ============================================================
@@ -1697,6 +1749,7 @@
       } else {
         html += '<button class="btn btn-ghost" id="da-unsold">↩ Unsold</button>';
       }
+      if (c.status !== 'Sold') html += '<button class="btn btn-ghost" id="da-cart">' + (inCart(c.id) ? '🛒 In sale' : '🛒 Add to sale') + '</button>';
       html += '<button class="btn btn-ghost" id="da-edit">✏️ Edit</button>';
       html += '<button class="btn btn-danger" id="da-delete">🗑 Delete</button>';
       actions.innerHTML = html;
@@ -1708,6 +1761,12 @@
       if (holdBtn) holdBtn.addEventListener('click', function () { toggleHold(c); });
       var unsoldBtn = $('da-unsold');
       if (unsoldBtn) unsoldBtn.addEventListener('click', function () { doUnsold(c.id); });
+      var cartBtn = $('da-cart');
+      if (cartBtn) cartBtn.addEventListener('click', function () {
+        if (!inCart(c.id)) addToCart(c);
+        $('detail-overlay').classList.remove('open');
+        showTab('checkout');
+      });
       $('da-delete').addEventListener('click', function () { confirmDelete(c.id); });
     } else {
       actions.innerHTML = '';
@@ -2661,11 +2720,28 @@
   }
 
   function openInventoryPicker(side) {
+    openCardPicker('Add from my cards', function () {
+      var ids = {};
+      trade.give.concat(trade.get).forEach(function (it) { if (it.cardId) ids[it.cardId] = true; });
+      return ids;
+    }, function (c) {
+      addTradeItem(side, {
+        cardId: c.id, name: c.name, detail: cardDetail(c),
+        value: c.price !== '' && c.price != null ? String(c.price) : '',
+        cost: c.cost !== '' && c.cost != null ? String(c.cost) : undefined,
+        thumb: c.frontId ? thumbUrl(c.frontId) : '', ebay: ebaySoldUrl(c)
+      });
+    });
+  }
+
+  /* Bottom sheet listing unsold inventory cards with search. addedIds()
+   * returns the ids already chosen (shown dimmed); onPick(card) adds one;
+   * query optionally pre-fills the search. */
+  function openCardPicker(title, addedIds, onPick, query) {
     var sheet = $('trade-sheet');
     function draw(q) {
       q = (q || '').toLowerCase();
-      var inTrade = {};
-      trade.give.concat(trade.get).forEach(function (it) { if (it.cardId) inTrade[it.cardId] = true; });
+      var inTrade = addedIds();
       var list = state.cards.filter(function (c) {
         if (c.status === 'Sold') return false;
         return !q || [c.name, c.set, c.number, c.notes].join(' ').toLowerCase().indexOf(q) >= 0;
@@ -2678,10 +2754,12 @@
           '<div style="font-weight:800;color:var(--accent)">' + (c.price !== '' && c.price != null ? money(c.price) : '') + '</div></button>';
       }).join('') : '<div class="trade-empty">No cards match.</div>';
     }
-    sheet.innerHTML = '<h3>Add from my cards</h3><input id="trade-pick-q" class="scan-search" placeholder="Search name, set, number…" ' +
+    sheet.innerHTML = '<h3>' + esc(title) + '</h3><input id="trade-pick-q" class="scan-search" placeholder="Search name, set, number…" ' +
       'style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:11px;color:var(--text);margin-bottom:10px">' +
       '<div id="trade-pick-list"></div><div class="sheet-actions"><button type="button" class="btn btn-ghost btn-block" id="trade-pick-done">Done</button></div>';
-    draw('');
+    $('trade-pick-q').value = query || '';
+    draw(query || '');
+    sheet.onchange = null;
     $('trade-sheet-overlay').classList.add('open');
     $('trade-pick-q').addEventListener('input', function (e) { draw(e.target.value); });
     $('trade-pick-done').addEventListener('click', closeTradeSheet);
@@ -2690,12 +2768,7 @@
       if (!b || b.classList.contains('added')) return;
       var c = findCard(b.dataset.pick);
       if (!c) return;
-      addTradeItem(side, {
-        cardId: c.id, name: c.name, detail: cardDetail(c),
-        value: c.price !== '' && c.price != null ? String(c.price) : '',
-        cost: c.cost !== '' && c.cost != null ? String(c.cost) : undefined,
-        thumb: c.frontId ? thumbUrl(c.frontId) : '', ebay: ebaySoldUrl(c)
-      });
+      onPick(c);
       b.classList.add('added');
     });
   }
@@ -2748,6 +2821,266 @@
         });
       } });
     }).catch(function () { toast('Scanner could not load. Check connection.'); });
+  }
+
+  // ============================================================
+  // CHECKOUT CART: several of my cards to one buyer. Each line starts at its
+  // asking price; a bundle discount (% off, $ off, or a set total) brings it
+  // to the final total, which is split across the cards by line price when
+  // the sale completes. Saved on this device; completing works offline.
+  // ============================================================
+  var CART_KEY = 'cardlog.cart';
+  var cart = loadCart();
+  var cartProfit = false;
+
+  function loadCart() {
+    try {
+      var c = JSON.parse(localStorage.getItem(CART_KEY) || 'null');
+      if (c && c.items) return c;
+    } catch (e) {}
+    return { items: [], mode: 'none', disc: '', channel: 'Show', buyer: '' };
+  }
+
+  function saveCart() {
+    try { localStorage.setItem(CART_KEY, JSON.stringify(cart)); } catch (e) {}
+  }
+
+  function inCart(id) { return cart.items.some(function (it) { return it.cardId === id; }); }
+
+  function addToCart(c) {
+    if (inCart(c.id)) return;
+    cart.items.push({
+      cardId: c.id, name: c.name, detail: cardDetail(c),
+      value: c.price !== '' && c.price != null ? String(c.price) : '',
+      cost: c.cost !== '' && c.cost != null ? String(c.cost) : undefined,
+      thumb: c.frontId ? thumbUrl(c.frontId) : '', ebay: ebaySoldUrl(c)
+    });
+    saveCart();
+    renderCart();
+  }
+
+  function cartTotals() {
+    var sub = 0, cost = 0, unknown = 0;
+    cart.items.forEach(function (it) {
+      sub += num(it.value);
+      if (it.cost !== undefined && it.cost !== '') cost += num(it.cost); else unknown++;
+    });
+    var d = num(cart.disc), total = sub;
+    if (cart.mode === 'pct') total = sub * (1 - Math.min(100, d) / 100);
+    else if (cart.mode === 'amt') total = sub - d;
+    else if (cart.mode === 'total' && String(cart.disc).trim()) total = d;
+    total = Math.max(0, Math.round(total * 100) / 100);
+    return { sub: sub, total: total, off: sub - total, cost: cost, unknown: unknown,
+             missing: cart.items.filter(function (it) { return !String(it.value).trim(); }).length };
+  }
+
+  function cartItemHTML(it, i) {
+    var thumb = it.thumb ? '<img src="' + esc(it.thumb) + '" alt="" loading="lazy" onerror="this.style.visibility=\'hidden\'">'
+      : '<div class="ti-ph">🃏</div>';
+    var comps = it.ebay ? '<a class="ti-ebay" href="' + esc(it.ebay) + '" target="_blank" rel="noopener" title="eBay sold listings">🔎 eBay</a>' : '';
+    var paid = cartProfit
+      ? ' · <b style="color:var(--accent)">paid ' + (it.cost !== undefined && it.cost !== '' ? money2(num(it.cost)) : '?') + '</b>' : '';
+    return '<div class="trade-item">' + thumb +
+      '<div class="ti-info"><div class="ti-name-row"><span class="ti-name">' + esc(it.name) + '</span>' + comps + '</div>' +
+      '<div class="ti-sub">' + esc(it.detail || '') + paid + '</div></div>' +
+      '<input inputmode="decimal" placeholder="$" value="' + esc(it.value) + '" data-ci="' + i + '"' + (String(it.value).trim() ? '' : ' class="empty"') + '>' +
+      '<button type="button" class="ti-x" data-cdel="' + i + '" aria-label="Remove">✕</button></div>';
+  }
+
+  function renderCart() {
+    // A card sold some other way since it was added can't be sold again.
+    var gone = cart.items.filter(function (it) { var c = findCard(it.cardId); return c && c.status === 'Sold'; });
+    if (gone.length) {
+      cart.items = cart.items.filter(function (it) { return gone.indexOf(it) < 0; });
+      saveCart();
+      toast('Removed ' + gone.map(function (it) { return it.name; }).join(', ') + ' from the cart: already sold', 4000);
+    }
+    $('cart-items').innerHTML = cart.items.length
+      ? cart.items.map(cartItemHTML).join('')
+      : '<div class="trade-empty">Add the cards the buyer is taking.</div>';
+    qsa('#cart-disc-mode button').forEach(function (b) { b.classList.toggle('active', b.dataset.mode === cart.mode); });
+    $('cart-disc-row').classList.toggle('hidden', cart.mode === 'none');
+    $('cart-disc-label').textContent = { pct: 'Percent off (%)', amt: 'Amount off ($)', total: 'Bundle total ($)' }[cart.mode] || '';
+    $('cart-disc').value = cart.disc;
+    qsa('#cart-channel .chip').forEach(function (b) { b.classList.toggle('active', b.dataset.val === cart.channel); });
+    $('cart-buyer').value = cart.buyer;
+    renderCartSummary();
+  }
+
+  function renderCartSummary() {
+    var t = cartTotals(), n = cart.items.length, html;
+    $('cart-sum').textContent = n ? n + (n === 1 ? ' card' : ' cards') : '';
+    if (!n) {
+      html = '<div class="tb-hint">Add cards to start a sale.</div>';
+    } else {
+      html = '<div class="tb-row"><span>' + n + (n === 1 ? ' card' : ' cards') + ' · ' + money2(t.sub) + '</span>' +
+        (t.off > 0.004 ? '<span>Discount −' + money2(t.off) + (t.sub ? ' (' + Math.round(100 * t.off / t.sub) + '%)' : '') + '</span>' : '') + '</div>' +
+        '<div class="tb-verdict even">Total ' + money2(t.total) + '</div>';
+      if (cartProfit) {
+        var profit = t.total - t.cost, cls = profit >= 0 ? 'up' : 'down';
+        html += '<div class="tb-profit"><div>You paid ' + money2(t.cost) + ' · profit <b class="' + cls + '">' +
+          (profit >= 0 ? '+' : '−') + money2(Math.abs(profit)) + (t.cost ? ' (' + (profit >= 0 ? '+' : '') + Math.round(100 * profit / t.cost) + '%)' : '') + '</b></div>' +
+          (t.unknown ? '<div class="tb-hint" style="color:var(--orange)">' + t.unknown + (t.unknown === 1 ? ' card has' : ' cards have') +
+            ' no paid-for price, so it counts as $0.</div>' : '') + '</div>';
+      }
+      if (t.missing) html += '<div class="tb-hint" style="color:var(--orange)">' + t.missing + (t.missing === 1 ? ' card has' : ' cards have') + ' no price yet.</div>';
+    }
+    $('cart-summary').innerHTML = html;
+    $('cart-complete').disabled = !n;
+  }
+
+  $('view-checkout').addEventListener('input', function (e) {
+    var t = e.target;
+    if (t.dataset.ci !== undefined) {
+      cart.items[+t.dataset.ci].value = t.value;
+      t.classList.toggle('empty', !t.value.trim());
+    } else if (t.id === 'cart-disc') cart.disc = t.value;
+    else if (t.id === 'cart-buyer') cart.buyer = t.value;
+    else return;
+    saveCart();
+    renderCartSummary();
+  });
+
+  $('view-checkout').addEventListener('click', function (e) {
+    var del = e.target.closest('[data-cdel]');
+    if (del) { cart.items.splice(+del.dataset.cdel, 1); saveCart(); renderCart(); return; }
+    var mode = e.target.closest('#cart-disc-mode button');
+    if (mode) {
+      if (cart.mode !== mode.dataset.mode) { cart.mode = mode.dataset.mode; cart.disc = ''; }
+      saveCart(); renderCart();
+      if (cart.mode !== 'none') $('cart-disc').focus();
+      return;
+    }
+    var ch = e.target.closest('#cart-channel .chip');
+    if (ch) { cart.channel = ch.dataset.val; saveCart(); renderCart(); }
+  });
+
+  $('cart-add').addEventListener('click', function () {
+    openCardPicker('Add to sale', function () {
+      var ids = {};
+      cart.items.forEach(function (it) { ids[it.cardId] = true; });
+      return ids;
+    }, addToCart);
+  });
+
+  $('cart-scan').addEventListener('click', scanCartCard);
+
+  $('cart-profit').addEventListener('click', function () {
+    cartProfit = !cartProfit;
+    $('cart-profit').textContent = cartProfit ? '🙈 Hide profit' : '💲 Show my profit';
+    renderCart();
+  });
+
+  $('cart-clear').addEventListener('click', function () {
+    if (cart.items.length && !window.confirm('Empty the cart?')) return;
+    clearCart();
+  });
+
+  function clearCart() {
+    cart = { items: [], mode: 'none', disc: '', channel: cart.channel || 'Show', buyer: '' };
+    saveCart();
+    renderCart();
+  }
+
+  /* Scan a card and find my copy of it: same catalog id if the sheet stores
+   * one, otherwise same name and card number. Several copies (raw and slabbed,
+   * or two of the same) open the picker filtered to that card. */
+  function scanCartCard() {
+    loadScannerUI().then(function (sc) {
+      sc.open({ onConfirm: function (res) {
+        var r = res.record;
+        var lead = function (n) { return String(n || '').split('/')[0].replace(/^0+(?=\d)/, '').toLowerCase(); };
+        var mine = state.cards.filter(function (c) {
+          if (c.status === 'Sold') return false;
+          if (c.tcgId) return c.tcgId === r.id;
+          return String(c.name || '').toLowerCase() === String(r.name).toLowerCase() && lead(c.number) === lead(r.number);
+        });
+        var free = mine.filter(function (c) { return !inCart(c.id); });
+        var sameType = free.filter(function (c) { return (c.cardType === 'Graded') === !!res.graded; });
+        showTab('checkout');
+        if (!mine.length) { toast(r.name + ' ' + r.number + ' isn\'t in your inventory', 4000); return; }
+        if (!free.length) { toast(r.name + ' is already in the cart'); return; }
+        var pick = free.length === 1 ? free[0] : sameType.length === 1 ? sameType[0] : null;
+        if (pick) { addToCart(pick); toast('Added ' + pick.name + ' ✓'); return; }
+        openCardPicker('Which ' + r.name + '?', function () {
+          var ids = {};
+          cart.items.forEach(function (it) { ids[it.cardId] = true; });
+          return ids;
+        }, addToCart, r.name);
+      } });
+    }).catch(function () { toast('Scanner could not load. Check connection.'); });
+  }
+
+  // ---------------- Complete sale ----------------
+  $('cart-complete').addEventListener('click', openCompleteSale);
+
+  /* Split the total by line price; rounding leftovers (a cent or two) go on
+   * the priciest card so the sales add up to exactly the total. */
+  function cartShares(total) {
+    var s = shares(total, cart.items);
+    var diff = Math.round((total - s.reduce(function (a, b) { return a + b; }, 0)) * 100) / 100;
+    if (diff && s.length) {
+      var top = 0;
+      cart.items.forEach(function (it, i) { if (num(it.value) > num(cart.items[top].value)) top = i; });
+      s[top] = Math.max(0, Math.round((s[top] + diff) * 100) / 100);
+    }
+    return s;
+  }
+
+  function openCompleteSale() {
+    if (!cart.items.length) return;
+    var t = cartTotals();
+    if (t.missing && cart.mode !== 'total') {
+      toast(t.missing + (t.missing === 1 ? ' card needs' : ' cards need') + ' a price first', 3500); return;
+    }
+    var split = cartShares(t.total);
+    var html = '<h3>Complete sale · ' + money2(t.total) + '</h3>' +
+      '<div class="tb-hint" style="margin-bottom:8px">Channel: ' + esc(cart.channel || '—') + (cart.buyer ? ' · Buyer: ' + esc(cart.buyer) : '') +
+      (t.off > 0.004 ? ' · ' + money2(t.off) + ' bundle discount' : '') + '</div>';
+    cart.items.forEach(function (it, i) {
+      html += '<div class="tc-row"><div class="tc-name">' + esc(it.name) + '<span>' + esc(it.detail || '') + '</span></div>' +
+        '<div style="font-weight:800;color:var(--accent)">' + money2(split[i]) +
+        (Math.abs(split[i] - num(it.value)) > 0.004 && String(it.value).trim() ? '<div style="font-size:11px;color:var(--muted);font-weight:400;text-decoration:line-through">' + money2(num(it.value)) + '</div>' : '') +
+        '</div></div>';
+    });
+    html += '<div class="tb-hint" style="margin-top:8px">Each card is marked Sold at its share of the total.</div>' +
+      '<div class="sheet-actions"><button type="button" class="btn btn-ghost btn-block" id="cs-cancel">Cancel</button>' +
+      '<button type="button" class="btn btn-primary btn-block" id="cs-go">Mark ' + cart.items.length + ' sold</button></div>';
+    $('trade-sheet').innerHTML = html;
+    $('trade-sheet').onchange = null;
+    $('trade-sheet-overlay').classList.add('open');
+    $('cs-cancel').addEventListener('click', closeTradeSheet);
+    $('cs-go').addEventListener('click', function () {
+      $('cs-go').disabled = true;
+      $('cs-go').textContent = 'Saving…';
+      completeSale(split).then(function (n) {
+        closeTradeSheet();
+        clearCart();
+        renderGallery();
+        toast('Sale recorded: ' + n + (n === 1 ? ' card' : ' cards') + ', ' + money2(t.total) + ' ✓ Uploading…', 4500);
+        flushOutbox(true);
+      }, function (e) {
+        $('cs-go').disabled = false;
+        $('cs-go').textContent = 'Mark ' + cart.items.length + ' sold';
+        toast('Could not save the sale on this device: ' + (e && e.message || e), 5000);
+      });
+    });
+  }
+
+  function completeSale(split) {
+    var n = 0, now = new Date().toISOString();
+    return cart.items.reduce(function (p, it, i) {
+      return p.then(function () {
+        return queueSold({ id: it.cardId, soldPrice: split[i], channel: cart.channel || '', buyer: cart.buyer || '' });
+      }).then(function () {
+        var c = findCard(it.cardId);   // show it as sold right away; the server catches up
+        if (c) { c.status = 'Sold'; c.soldPrice = split[i]; c.channel = cart.channel; c.buyer = cart.buyer; c.soldAt = now; }
+        n++;
+      });
+    }, Promise.resolve()).then(function () {
+      try { localStorage.setItem('cardlog.cache', JSON.stringify(state.cards)); } catch (e) {}
+      return n;
+    });
   }
 
   // ============================================================
