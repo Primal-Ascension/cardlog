@@ -503,6 +503,24 @@
   .trade-pick img { width: 34px; height: 48px; object-fit: cover; border-radius: 4px; background: #0f0f22; }
   .trade-pick.added { opacity: .45; }
 
+  /* ── Sales & insights ── */
+  .ins-custom { display: flex; gap: 10px; margin-bottom: 12px; font-size: 12px; color: var(--muted); }
+  .ins-custom input { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 8px; color: var(--text); }
+  .ins-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+  .ins-stat { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; }
+  .ins-stat b { display: block; font-size: 20px; font-weight: 800; margin-top: 2px; }
+  .ins-stat span { font-size: 11px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .3px; }
+  .ins-stat b.up { color: var(--green); } .ins-stat b.down { color: var(--red); }
+  .ins-h { font-size: 15px; margin: 16px 0 8px; }
+  .ins-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 8px; }
+  .ins-table td { padding: 7px 4px; border-bottom: 1px solid var(--border); }
+  .ins-table td.r { text-align: right; white-space: nowrap; }
+  .ins-table tr[data-open] { cursor: pointer; }
+  .ins-note { font-size: 12px; color: var(--muted); margin: 4px 0 10px; }
+
+  .cert-link { display: inline-flex; align-items: center; font-size: 12px; font-weight: 700; color: var(--accent);
+    text-decoration: none; padding: 3px 8px; border: 1px solid var(--border); border-radius: 6px; }
+
   /* ── Grader logo badges ── */
   .grader-badge { display: inline-flex; align-items: center; gap: 4px; border: 1px solid rgba(255,255,255,.25); }
   .grader-badge img { height: 12px; width: auto; display: block; }
@@ -542,6 +560,7 @@
         <button type="button" class="home-tile" data-go="bulk"><span class="ht-icon">🖼</span><span class="ht-title">Bulk add</span><span class="ht-sub">Many photos at once</span></button>
         <button type="button" class="home-tile" data-go="gallery"><span class="ht-icon">📦</span><span class="ht-title">My cards</span><span class="ht-sub" id="home-cards-sub">Inventory</span></button>
         <button type="button" class="home-tile" data-go="trade"><span class="ht-icon">⚖</span><span class="ht-title">Trade</span><span class="ht-sub" id="home-trade-sub">Compare a deal</span></button>
+        <button type="button" class="home-tile" data-go="insights"><span class="ht-icon">📊</span><span class="ht-title">Sales &amp; insights</span><span class="ht-sub" id="home-insights-sub">Show recap, inventory</span></button>
         <button type="button" class="home-tile" data-go="settings"><span class="ht-icon">⚙</span><span class="ht-title">Settings</span><span class="ht-sub">Connection, export</span></button>
       </div>
       <div id="scan-status"></div>
@@ -703,6 +722,25 @@
       <button type="button" id="trade-reset" class="btn btn-ghost btn-block">Start a new trade</button>
     </div>
 
+    <div id="view-insights" class="hidden">
+      <div class="view-head"><button type="button" class="vh-back" data-home>← Home</button><span>Sales &amp; insights</span></div>
+      <div class="chip-row" id="ins-range">
+        <button type="button" class="chip" data-range="today">Today</button>
+        <button type="button" class="chip" data-range="3d">Last 3 days</button>
+        <button type="button" class="chip" data-range="7d">7 days</button>
+        <button type="button" class="chip" data-range="30d">30 days</button>
+        <button type="button" class="chip" data-range="all">All time</button>
+        <button type="button" class="chip" data-range="custom">Dates…</button>
+      </div>
+      <div id="ins-custom" class="ins-custom hidden">
+        <label>From <input type="date" id="ins-from"></label>
+        <label>To <input type="date" id="ins-to"></label>
+      </div>
+      <div id="ins-sales"></div>
+      <h3 class="ins-h">Inventory</h3>
+      <div id="ins-inventory"></div>
+    </div>
+
     <div id="view-settings" class="hidden">
       <div class="view-head"><button type="button" class="vh-back" data-home>← Home</button><span>Settings</span></div>
       <div class="field">
@@ -713,7 +751,8 @@
         <label>Sticky defaults</label>
         <div id="settings-sticky" style="font-size:13px;color:var(--muted);padding:12px;background:var(--panel);border-radius:10px;">-</div>
       </div>
-      <button id="export-csv-btn" class="btn btn-ghost btn-block" style="margin-bottom:10px;">⬇ Export Sold CSV</button>
+      <button id="export-all-btn" class="btn btn-ghost btn-block" style="margin-bottom:10px;">⬇ Export all cards (CSV)</button>
+      <button id="export-csv-btn" class="btn btn-ghost btn-block" style="margin-bottom:10px;">⬇ Export sold cards (CSV)</button>
       <button id="logout-btn" class="btn btn-danger btn-block" style="margin-bottom:10px;">Log Out</button>
       <div style="text-align:center;font-size:11px;color:var(--muted);margin-top:20px;">CardLog v1.0</div>
     </div>
@@ -1141,6 +1180,8 @@
     $('view-gallery').classList.toggle('hidden', tab !== 'gallery');
     $('view-settings').classList.toggle('hidden', tab !== 'settings');
     $('view-trade').classList.toggle('hidden', tab !== 'trade');
+    $('view-insights').classList.toggle('hidden', tab !== 'insights');
+    if (tab === 'insights') renderInsights();
     $('save-bar').classList.toggle('hidden', tab !== 'add');
     $('trade-bar').classList.toggle('hidden', tab !== 'trade');
     $('main').classList.toggle('with-save-bar', tab === 'add');
@@ -1347,6 +1388,21 @@
     TAG: { src: 'img/graders/tag.png', bg: '#fff', fg: '#111' },
     BGS: { src: 'img/graders/bgs.svg', bg: '#000', fg: '#fff' }
   };
+
+  // Grader's own page for a cert number. PSA and CGC are documented lookup
+  // URLs; TAG's card reports live at my.taggrading.com/card/<cert> (from TAG's
+  // help pages); Beckett has no documented deep link, so its lookup page is
+  // opened with the cert filled in.
+  function certUrl(grader, cert) {
+    var c = encodeURIComponent(String(cert).trim());
+    switch ((grader || '').toUpperCase()) {
+      case 'PSA': return 'https://www.psacard.com/cert/' + c;
+      case 'CGC': return 'https://www.cgccards.com/certlookup/' + c + '/';
+      case 'TAG': return 'https://my.taggrading.com/card/' + c;
+      case 'BGS': return 'https://www.beckett.com/grading/card-lookup?item_type=BGS&item_id=' + c;
+      default: return '';
+    }
+  }
 
   function graderBadge(card, cls) {
     var logo = GRADER_LOGOS[(card.grader || '').toUpperCase()];
@@ -1589,6 +1645,12 @@
     $('detail-sub').textContent = subParts.join(' · ');
 
     var badges = conditionBadge(c);
+    var cert = c.cardType === 'Graded' && c.cert ? certUrl(c.grader, c.cert) : '';
+    if (c.cardType === 'Graded' && c.cert) {
+      badges += cert
+        ? ' <a class="cert-link" href="' + esc(cert) + '" target="_blank" rel="noopener">Cert #' + esc(c.cert) + ' ↗</a>'
+        : ' <span class="cert-link">Cert #' + esc(c.cert) + '</span>';
+    }
     $('detail-badges').innerHTML = badges;
 
     $('detail-price').textContent = c.status === 'Sold' ? 'Sold for ' + money(c.soldPrice) : money(c.price);
@@ -2558,7 +2620,7 @@
         return queueSold({ id: s.it.cardId, soldPrice: s.soldPrice, channel: 'Trade', buyer: 'Trade ' + today });
       }).then(function () {
         var c = findCard(s.it.cardId);   // show it as sold right away; the server catches up
-        if (c) { c.status = 'Sold'; c.soldPrice = s.soldPrice; c.channel = 'Trade'; }
+        if (c) { c.status = 'Sold'; c.soldPrice = s.soldPrice; c.channel = 'Trade'; c.soldAt = new Date().toISOString(); }
         n.sold++;
       });
     });
@@ -2688,6 +2750,143 @@
     }).catch(function () { toast('Scanner could not load. Check connection.'); });
   }
 
+  // ============================================================
+  // SALES & INSIGHTS: a sales recap for a date range (show day, weekend,
+  // month) and inventory health. Uses the admin card list: soldAt,
+  // soldPrice, cost, channel, createdAt.
+  // ============================================================
+  var insRange = 'today';
+
+  function dayStart(d) { var x = new Date(d); x.setHours(0, 0, 0, 0); return x; }
+
+  function rangeBounds() {
+    var now = new Date(), start = null, end = now;
+    if (insRange === 'today') start = dayStart(now);
+    else if (insRange === '3d') start = dayStart(now.getTime() - 2 * 864e5);
+    else if (insRange === '7d') start = dayStart(now.getTime() - 6 * 864e5);
+    else if (insRange === '30d') start = dayStart(now.getTime() - 29 * 864e5);
+    else if (insRange === 'custom') {
+      var f = $('ins-from').value, t = $('ins-to').value;
+      start = f ? new Date(f + 'T00:00:00') : null;
+      end = t ? new Date(t + 'T23:59:59') : now;
+    }
+    return { start: start, end: end };
+  }
+
+  function renderInsights() {
+    qsa('#ins-range .chip').forEach(function (b) { b.classList.toggle('active', b.dataset.range === insRange); });
+    $('ins-custom').classList.toggle('hidden', insRange !== 'custom');
+    var b = rangeBounds();
+    var sold = state.cards.filter(function (c) { return c.status === 'Sold'; });
+    var undated = 0;
+    var inRange = sold.filter(function (c) {
+      if (insRange === 'all') return true;
+      var t = c.soldAt ? new Date(c.soldAt) : null;
+      if (!t || isNaN(t)) { undated++; return false; }
+      return (!b.start || t >= b.start) && t <= b.end;
+    });
+
+    var revenue = 0, paid = 0, costKnown = 0, byChannel = {};
+    inRange.forEach(function (c) {
+      var p = num(c.soldPrice);
+      revenue += p;
+      if (c.cost !== '' && c.cost != null) { paid += num(c.cost); costKnown++; }
+      var ch = c.channel || 'Other';
+      byChannel[ch] = byChannel[ch] || { n: 0, total: 0 };
+      byChannel[ch].n++; byChannel[ch].total += p;
+    });
+    // Profit only over sales whose paid-for price is known.
+    var knownRevenue = inRange.reduce(function (a, c) { return a + (c.cost !== '' && c.cost != null ? num(c.soldPrice) : 0); }, 0);
+    var profit = knownRevenue - paid;
+    var margin = knownRevenue ? Math.round(100 * profit / knownRevenue) : null;
+    var trades = byChannel.Trade || { n: 0, total: 0 };
+
+    var html = '<div class="ins-stats">' +
+      '<div class="ins-stat"><span>Cards sold</span><b>' + inRange.length + '</b></div>' +
+      '<div class="ins-stat"><span>Revenue</span><b>' + money2(revenue) + '</b></div>' +
+      '<div class="ins-stat"><span>Profit</span><b class="' + (profit >= 0 ? 'up' : 'down') + '">' + (profit >= 0 ? '+' : '−') + money2(Math.abs(profit)) + '</b></div>' +
+      '<div class="ins-stat"><span>Margin</span><b>' + (margin === null ? '–' : margin + '%') + '</b></div>' +
+      '<div class="ins-stat"><span>Cash &amp; other sales</span><b>' + money2(revenue - trades.total) + '</b></div>' +
+      '<div class="ins-stat"><span>Traded away</span><b>' + trades.n + (trades.n ? ' · ' + money2(trades.total) : '') + '</b></div>' +
+      '</div>';
+    if (inRange.length && costKnown < inRange.length) {
+      html += '<div class="ins-note">' + (inRange.length - costKnown) + ' sold card(s) have no paid-for price and are left out of profit and margin.</div>';
+    }
+    if (undated && insRange !== 'all') html += '<div class="ins-note">' + undated + ' older sale(s) have no sale date; they show under All time.</div>';
+
+    var channels = Object.keys(byChannel).sort(function (a, c) { return byChannel[c].total - byChannel[a].total; });
+    if (channels.length) {
+      html += '<h3 class="ins-h">By channel</h3><table class="ins-table">' + channels.map(function (ch) {
+        return '<tr><td>' + esc(ch) + '</td><td class="r">' + byChannel[ch].n + '</td><td class="r">' + money2(byChannel[ch].total) + '</td></tr>';
+      }).join('') + '</table>';
+    }
+    var withProfit = inRange.filter(function (c) { return c.cost !== '' && c.cost != null; })
+      .map(function (c) { return { c: c, p: num(c.soldPrice) - num(c.cost) }; })
+      .sort(function (a, c) { return c.p - a.p; }).slice(0, 5);
+    if (withProfit.length) {
+      html += '<h3 class="ins-h">Best sellers</h3><table class="ins-table">' + withProfit.map(function (x) {
+        return '<tr data-open="' + esc(x.c.id) + '"><td>' + esc(x.c.name) + '</td><td class="r">' + money2(num(x.c.soldPrice)) +
+          '</td><td class="r" style="color:var(--green)">+' + money2(x.p) + '</td></tr>';
+      }).join('') + '</table>';
+    }
+    if (inRange.length) {
+      var list = inRange.slice().sort(function (a, c) { return String(c.soldAt || '').localeCompare(String(a.soldAt || '')); });
+      html += '<h3 class="ins-h">Sales</h3><table class="ins-table">' + list.map(function (c) {
+        var d = c.soldAt ? new Date(c.soldAt) : null;
+        return '<tr data-open="' + esc(c.id) + '"><td>' + esc(c.name) + '<div class="ins-note" style="margin:0">' +
+          esc([c.channel, d && !isNaN(d) ? d.toLocaleDateString() : ''].filter(Boolean).join(' · ')) + '</div></td>' +
+          '<td class="r">' + money2(num(c.soldPrice)) + '</td></tr>';
+      }).join('') + '</table>';
+    } else {
+      html += '<div class="ins-note">No sales in this period.</div>';
+    }
+    $('ins-sales').innerHTML = html;
+
+    // Inventory health (not tied to the date range).
+    var active = state.cards.filter(function (c) { return c.status === 'For Sale' || c.status === 'Hold'; });
+    var asking = 0, invPaid = 0, askingWithCost = 0, noCost = 0;
+    active.forEach(function (c) {
+      asking += num(c.price);
+      if (c.cost !== '' && c.cost != null) { invPaid += num(c.cost); askingWithCost += num(c.price); } else noCost++;
+    });
+    var cutoff = Date.now() - 90 * 864e5;
+    var stale = active.filter(function (c) { var t = c.createdAt ? new Date(c.createdAt).getTime() : NaN; return !isNaN(t) && t < cutoff; })
+      .sort(function (a, c) { return new Date(a.createdAt) - new Date(c.createdAt); });
+    var inv = '<div class="ins-stats">' +
+      '<div class="ins-stat"><span>For sale</span><b>' + active.filter(function (c) { return c.status === 'For Sale'; }).length + '</b></div>' +
+      '<div class="ins-stat"><span>On hold</span><b>' + active.filter(function (c) { return c.status === 'Hold'; }).length + '</b></div>' +
+      '<div class="ins-stat"><span>Asking value</span><b>' + money2(asking) + '</b></div>' +
+      '<div class="ins-stat"><span>Paid for it</span><b>' + money2(invPaid) + '</b></div>' +
+      '<div class="ins-stat" style="grid-column:1/-1"><span>Potential profit at asking</span><b class="up">+' + money2(Math.max(0, askingWithCost - invPaid)) + '</b></div>' +
+      '</div>';
+    if (noCost) inv += '<div class="ins-note">' + noCost + ' card(s) for sale have no paid-for price (left out of paid and potential profit).</div>';
+    inv += '<h3 class="ins-h">Unsold 90+ days (' + stale.length + ')</h3>';
+    inv += stale.length ? '<table class="ins-table">' + stale.map(function (c) {
+      var days = Math.floor((Date.now() - new Date(c.createdAt).getTime()) / 864e5);
+      return '<tr data-open="' + esc(c.id) + '"><td>' + esc(c.name) + '<div class="ins-note" style="margin:0">' + esc(c.set || '') +
+        ' · listed ' + days + ' days ago</div></td><td class="r">' + money2(num(c.price)) + '</td></tr>';
+    }).join('') + '</table>' : '<div class="ins-note">Nothing has been sitting longer than 90 days.</div>';
+    $('ins-inventory').innerHTML = inv;
+    $('home-insights-sub').textContent = 'Show recap, inventory';
+  }
+
+  $('ins-range').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-range]');
+    if (!b) return;
+    insRange = b.dataset.range;
+    if (insRange === 'custom' && !$('ins-from').value) {
+      var t = new Date(); $('ins-to').value = t.toISOString().slice(0, 10);
+      t.setDate(t.getDate() - 6); $('ins-from').value = t.toISOString().slice(0, 10);
+    }
+    renderInsights();
+  });
+  $('ins-from').addEventListener('change', renderInsights);
+  $('ins-to').addEventListener('change', renderInsights);
+  $('view-insights').addEventListener('click', function (e) {
+    var row = e.target.closest('tr[data-open]');
+    if (row) openDetail(row.dataset.open);
+  });
+
   function setScanMatch(m) {
     state.scanTcgId = m ? m.id : '';
     $('scan-match-text').textContent = m ? m.text : '';
@@ -2753,15 +2952,12 @@
     $('settings-sticky').textContent = sticky || 'None set yet';
   }
 
-  $('export-csv-btn').addEventListener('click', function () {
-    var soldCards = state.cards.filter(function (c) { return c.status === 'Sold'; });
-    if (!soldCards.length) { toast('No sold cards to export'); return; }
-    var cols = ['sku', 'name', 'set', 'number', 'condition', 'grader', 'grade', 'price', 'soldPrice', 'soldAt', 'channel', 'buyer'];
+  function downloadCsv(cards, cols, name) {
     var lines = [cols.join(',')];
-    soldCards.forEach(function (c) {
+    cards.forEach(function (c) {
       lines.push(cols.map(function (k) {
         var v = c[k] == null ? '' : String(c[k]);
-        if (v.indexOf(',') >= 0 || v.indexOf('"') >= 0) v = '"' + v.replace(/"/g, '""') + '"';
+        if (/[",\r\n]/.test(v)) v = '"' + v.replace(/"/g, '""') + '"';
         return v;
       }).join(','));
     });
@@ -2769,11 +2965,23 @@
     var url = URL.createObjectURL(blob);
     var a = document.createElement('a');
     a.href = url;
-    a.download = 'cardlog-sold-' + new Date().toISOString().slice(0, 10) + '.csv';
+    a.download = 'cardlog-' + name + '-' + new Date().toISOString().slice(0, 10) + '.csv';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  }
+
+  $('export-csv-btn').addEventListener('click', function () {
+    var soldCards = state.cards.filter(function (c) { return c.status === 'Sold'; });
+    if (!soldCards.length) { toast('No sold cards to export'); return; }
+    downloadCsv(soldCards, ['sku', 'name', 'set', 'number', 'condition', 'grader', 'grade', 'price', 'soldPrice', 'soldAt', 'channel', 'buyer'], 'sold');
+  });
+
+  $('export-all-btn').addEventListener('click', function () {
+    if (!state.cards.length) { toast('No cards to export'); return; }
+    downloadCsv(state.cards, ['sku', 'name', 'set', 'number', 'variant', 'language', 'cardType', 'condition', 'grader', 'grade',
+      'cert', 'status', 'price', 'cost', 'soldPrice', 'soldAt', 'channel', 'buyer', 'createdAt', 'notes', 'tcgId'], 'all-cards');
   });
 
   // ============================================================
