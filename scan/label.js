@@ -142,14 +142,31 @@
       var out = parse(r.data.text || '', words, p.redShare);
       out.text = r.data.text || '';
       out.redShare = Math.round(p.redShare * 1000) / 1000;
-      if (out.cert && certOk(out.grader, out.cert)) return out;
-      // Small print: re-read the cert-looking word enlarged, digits only.
-      var cw = words.filter(function (wd) { return (String(wd.text).match(/\d/g) || []).length >= 5; })
-        .sort(function (a, b) { return String(b.text).length - String(a.text).length; })[0];
+      // The cert is the smallest print and one wrong digit points at someone
+      // else's card, so it must be read the same way twice: the full read and
+      // the cert word re-read enlarged, digits only (a third read at another
+      // size breaks a tie). No two agreeing reads: left blank.
+      var first = out.cert && certOk(out.grader, out.cert) ? out.cert.replace(/\D/g, '') : '';
+      var digitWords = words.filter(function (wd) { return (String(wd.text).match(/\d/g) || []).length >= 5; });
+      var cw = digitWords.filter(function (wd) { return first && String(wd.text).replace(/\D/g, '').indexOf(first.slice(0, 5)) >= 0; })[0] ||
+        digitWords.sort(function (a, b) { return String(b.text).length - String(a.text).length; })[0];
       out.cert = '';
       if (!cw) return out;
-      return rereadDigits(W, p.canvas, cw.bbox).then(function (d) {
-        if (certOk(out.grader, d)) out.cert = d;
+      var reads = first ? [first] : [];
+      function agreed() {
+        var valid = reads.filter(function (d) { return certOk(out.grader, d); });
+        for (var i = 0; i < valid.length; i++) {
+          for (var j = i + 1; j < valid.length; j++) if (valid[i] === valid[j]) return valid[i];
+        }
+        return '';
+      }
+      return rereadDigits(W, p.canvas, cw.bbox, 3).then(function (d) {
+        reads.push(d);
+        if (agreed()) return;
+        return rereadDigits(W, p.canvas, cw.bbox, 2).then(function (d2) { reads.push(d2); });
+      }).then(function () {
+        out.cert = agreed();
+        out.certReads = reads;
         return out;
       }, function () { return out; });
     }).then(function (out) {
@@ -183,14 +200,15 @@
     return job;
   }
 
-  function rereadDigits(w, src, bb) {
+  function rereadDigits(w, src, bb, S) {
     var pad = Math.round((bb.y1 - bb.y0) * 0.6), x0 = Math.max(0, bb.x0 - pad), y0 = Math.max(0, bb.y0 - pad);
-    var cw = Math.min(src.width, bb.x1 + pad) - x0, ch = Math.min(src.height, bb.y1 + pad) - y0, S = 3;
+    var cw = Math.min(src.width, bb.x1 + pad) - x0, ch = Math.min(src.height, bb.y1 + pad) - y0;
     var c = document.createElement('canvas');
     c.width = cw * S; c.height = ch * S;
     var g = c.getContext('2d');
     g.imageSmoothingQuality = 'high';
     g.drawImage(src, x0, y0, cw, ch, 0, 0, c.width, c.height);
+    binarize(g, c.width, c.height);
     return w.setParameters({ tessedit_pageseg_mode: '7', tessedit_char_whitelist: '0123456789' }).then(function () {
       return w.recognize(c);
     }).then(function (r) {
@@ -198,6 +216,24 @@
     }).finally(function () {
       return w.setParameters({ tessedit_pageseg_mode: '11', tessedit_char_whitelist: '' });
     });
+  }
+
+  /* Black-and-white by Otsu's threshold: crisp digit edges for the re-read
+   * of an enlarged, slightly blurry cert. */
+  function binarize(g, w, h) {
+    var img = g.getImageData(0, 0, w, h), d = img.data, hist = new Array(256).fill(0), n = w * h, i;
+    for (i = 0; i < d.length; i += 4) hist[d[i]]++;           // already gray (prepare())
+    var sum = 0, sumB = 0, wB = 0, best = 0, t = 128;
+    for (i = 0; i < 256; i++) sum += i * hist[i];
+    for (i = 0; i < 256; i++) {
+      wB += hist[i]; if (!wB) continue;
+      var wF = n - wB; if (!wF) break;
+      sumB += i * hist[i];
+      var mB = sumB / wB, mF = (sum - sumB) / wF, v = wB * wF * (mB - mF) * (mB - mF);
+      if (v > best) { best = v; t = i; }
+    }
+    for (i = 0; i < d.length; i += 4) d[i] = d[i + 1] = d[i + 2] = d[i] > t ? 255 : 0;
+    g.putImageData(img, 0, 0);
   }
 
   /* Cert numbers by grader: PSA 8-10 digits, CGC 10 (or 13 on older
@@ -226,7 +262,6 @@
     TAG: [['PRISTINE', 10], ['GEM MINT', 10], ['MINT+', 9.5], ['MINT', 9], ['NM-MT+', 8.5], ['NM-MT', 8], ['NM+', 7.5], ['NM', 7],
           ['EX-MT', 6], ['EX', 5], ['VG-EX', 4], ['VG', 3], ['GOOD', 2], ['FAIR', 1.5], ['POOR', 1]]
   };
-  var SUBGRADES = /CENTER|CORNER|EDGE|SURFACE/;
 
   function esc(s) { return s.replace(/[.*+?^${}()|[\]\\\/]/g, '\\$&'); }
 
@@ -273,25 +308,10 @@
     var grader = graderOf(T, cert, redShare || 0);
     if (grader === 'other') return { grader: '', grade: '', cert: '', other: true };
     var fromWord = wordGrade(T, grader || 'PSA');
-    // Number candidates: 1-10 or a half grade, not a card number (#4, 4/102)
-    // and not a subgrade (CENTERING 9.5).
-    var cands = [];
-    (words || []).forEach(function (w, i) {
-      var t = String(w.text).toUpperCase().replace(/[^0-9.#\/]/g, '');
-      if (!/^(10|[1-9](\.5)?)$/.test(t)) return;
-      var prev = i > 0 ? String(words[i - 1].text).toUpperCase() : '';
-      if (/#\s*$/.test(prev) || SUBGRADES.test(prev)) return;
-      cands.push({ v: parseFloat(t), h: w.h });
-    });
-    if (!words || !words.length) {
-      (T.match(/(^|\s)(10|[1-9](\.5)?)(?=\s|$)/g) || []).forEach(function (m) { cands.push({ v: parseFloat(m), h: 0 }); });
-    }
-    // The grade word is the most reliable read (big bold digits often aren't
-    // read at all); a lone number is used only when the grader is known.
-    var grade = null, agree = fromWord != null && cands.some(function (c) { return c.v === fromWord; });
-    if (agree) grade = fromWord;
-    else if (grader && fromWord != null) grade = fromWord;
-    else if (grader && cands.length) grade = cands.reduce(function (a, c) { return c.h > a.h ? c : a; }).v;
+    // The grade comes from the grade word (MINT, NM-MT, GEM MT...): big bold
+    // digits are often missed or misread (a CGC 9.5 came out "2" from a
+    // camera-size photo), so a number on its own is never used.
+    var grade = grader && fromWord != null ? fromWord : null;
     return { grader: grader, grade: grade == null ? '' : String(grade), cert: cert };
   }
 

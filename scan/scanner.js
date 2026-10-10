@@ -17,6 +17,8 @@
   var STABLE_TOL = 0.025;        // corner movement allowed, as a fraction of card height
   var DETECT_EVERY_MS = 140;
   var LIVE_SIDE = 480;           // live detection resolution; capture re-detects at 1000
+  var MAX_SIDE = 3000;           // captures and photos are identified at up to this size: at 2000
+                                 // a slab's cert digits were often unreadable, at 3000 they read
   var LOG_KEY = 'cardlog.scanlog', LOG_MAX = 300;
   var PRINTING_LABELS = {
     unlimited: 'Unlimited', normal: 'Normal', holo: 'Holo', reverse_holo: 'Reverse Holo',
@@ -288,7 +290,9 @@
     }
     return navigator.mediaDevices.getUserMedia({
       audio: false,
-      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }
+      // As sharp as the camera allows (up to 4K): the slab label's cert digits
+      // and the name read need the detail; live detection works on a small copy.
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 3840 }, height: { ideal: 2160 } }
     }).then(function (s) {
       if (!ui) { s.getTracks().forEach(function (t) { t.stop(); }); return; }
       stream = s;
@@ -372,17 +376,21 @@
     if (busy || !E) return;
     var v = ui && $('video', ui);
     if (!v || !v.videoWidth) return;
-    var c = document.createElement('canvas');
-    c.width = v.videoWidth; c.height = v.videoHeight;
-    c.getContext('2d').drawImage(v, 0, 0);
-    processCanvas(c, how, liveQuad);
+    var s = Math.min(1, MAX_SIDE / Math.max(v.videoWidth, v.videoHeight)), c = document.createElement('canvas');
+    c.width = Math.round(v.videoWidth * s); c.height = Math.round(v.videoHeight * s);
+    c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+    processCanvas(c, how, scaleQuad(liveQuad, s));
+  }
+
+  function scaleQuad(q, s) {
+    return q ? q.map(function (p) { return [p[0] * s, p[1] * s]; }) : null;
   }
 
   function captureFile(file) {
     if (busy || !E) return;
     var img = new Image(), url = URL.createObjectURL(file);
     img.onload = function () {
-      var maxSide = 2000, s = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
+      var s = Math.min(1, MAX_SIDE / Math.max(img.naturalWidth, img.naturalHeight));
       var c = document.createElement('canvas');
       c.width = Math.round(img.naturalWidth * s); c.height = Math.round(img.naturalHeight * s);
       c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
@@ -624,7 +632,8 @@
   function labelText(l) {
     if (!l) return 'Label not readable: enter grader and grade by hand';
     if (l.other) return 'Label from a grader not in your list';
-    return '🏷 ' + [l.grader || 'Grader ?', l.grade || 'grade ?', l.cert ? '· cert ' + l.cert : ''].filter(Boolean).join(' ');
+    return '🏷 ' + [l.grader || 'Grader ?', l.grade || 'grade ?',
+      l.cert ? '· cert ' + l.cert : '· cert not readable (fill the frame with the slab, or use Photo)'].join(' ');
   }
 
   function usableLabel(l) { return l && !l.other ? l : null; }
@@ -1013,7 +1022,7 @@
   }
 
   function decodeFile(file) {
-    var maxSide = 2000;
+    var maxSide = MAX_SIDE;
     function draw(src, w, h) {
       var s = Math.min(1, maxSide / Math.max(w, h)), c = document.createElement('canvas');
       c.width = Math.round(w * s); c.height = Math.round(h * s);
