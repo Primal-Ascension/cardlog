@@ -158,6 +158,31 @@
     });
   }
 
+  /* Words in a card's name band (top of the card), with their heights, for
+   * the scanner's name filter. Resolves { words: [{ text, h, conf }], ms }. */
+  function readName(canvas) {
+    var job = queue.then(function () {
+      var t0 = performance.now(), p = prepare(canvas);
+      return worker().then(function (w) {
+        return w.recognize(p.canvas, {}, { text: true, blocks: true });
+      }).then(function (r) {
+        var words = [];
+        (r.data.blocks || []).forEach(function (b) {
+          (b.paragraphs || []).forEach(function (pa) {
+            (pa.lines || []).forEach(function (l) {
+              (l.words || []).forEach(function (wd) {
+                words.push({ text: wd.text, h: wd.bbox.y1 - wd.bbox.y0, conf: wd.confidence, x: wd.bbox.x0, y: wd.bbox.y0 });
+              });
+            });
+          });
+        });
+        return { words: words, ms: Math.round(performance.now() - t0) };
+      });
+    });
+    queue = job.catch(function () {});
+    return job;
+  }
+
   function rereadDigits(w, src, bb) {
     var pad = Math.round((bb.y1 - bb.y0) * 0.6), x0 = Math.max(0, bb.x0 - pad), y0 = Math.max(0, bb.y0 - pad);
     var cw = Math.min(src.width, bb.x1 + pad) - x0, ch = Math.min(src.height, bb.y1 + pad) - y0, S = 3;
@@ -270,5 +295,6 @@
     return { grader: grader, grade: grade == null ? '' : String(grade), cert: cert };
   }
 
-  global.CardLabel = { read: read, parse: parse, warm: function () { return worker().then(function () { return true; }); } };
+  global.CardLabel = { read: read, readName: readName, parse: parse,
+                       warm: function () { return worker().then(function () { return true; }); } };
 })(window);

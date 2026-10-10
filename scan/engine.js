@@ -392,8 +392,101 @@
         if (top.length > k) top.pop();
       }
     }
+    E.lastScores = scores;   // kept for top(), which ranks a subset (name filter)
     return top;
   }
+
+  /* Best k of the given record indices by the last match() scores. */
+  function top(E, indices, k) {
+    var s = E.lastScores;
+    return indices.map(function (i) { return { i: i, score: s ? s[i] : 0 }; })
+      .sort(function (a, b) { return b.score - a.score; }).slice(0, k || 5);
+  }
+
+  /* ---------------- name filter ----------------
+   * The scanner reads the card's name (OCR of the name band) and snaps it to
+   * the closest catalog name; matching then ranks only cards with that name. */
+  function normName(s) {
+    return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  }
+
+  function nameIndex(E) {
+    if (E.names) return E.names;
+    var byKey = {}, keys = [];
+    E.records.forEach(function (r, i) {
+      var k = normName(r.name);
+      if (k.length < 3) return;
+      if (!byKey[k]) { byKey[k] = []; keys.push(k); }
+      byKey[k].push(i);
+    });
+    E.names = { byKey: byKey, keys: keys };
+    return E.names;
+  }
+
+  // Edit distance, giving up (returning max + 1) once it can't be <= max.
+  function lev(a, b, max) {
+    if (Math.abs(a.length - b.length) > max) return max + 1;
+    var prev = new Array(b.length + 1), cur = new Array(b.length + 1), i, j;
+    for (j = 0; j <= b.length; j++) prev[j] = j;
+    for (i = 1; i <= a.length; i++) {
+      cur[0] = i;
+      var rowMin = i;
+      for (j = 1; j <= b.length; j++) {
+        cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a.charCodeAt(i - 1) === b.charCodeAt(j - 1) ? 0 : 1));
+        if (cur[j] < rowMin) rowMin = cur[j];
+      }
+      if (rowMin > max) return max + 1;
+      var t = prev; prev = cur; cur = t;
+    }
+    return prev[b.length];
+  }
+
+  var NAME_STOP = { trainer: 1, basic: 1, stage: 1, stage1: 1, stage2: 1, pokemon: 1, hp: 1, evolves: 1, from: 1, put: 1, lv: 1 };
+
+  /* OCR words [{ text }] in reading order -> { key, name, score, dist, ok,
+   * read } for the closest catalog name, or null. The pre-evolution in
+   * "Evolves from Charmeleon" is skipped (when glare hides the real name it
+   * would otherwise win); "Put Charizard on the Stage 1 card" names the card
+   * itself, so it may stay. Runs of up to 4 words are tried, and a tie goes
+   * to the longer name (Kadabra, not Abra; Dark Charizard, not Charizard).
+   * ok: spelled closely enough to trust: exact up to 5 letters, one letter
+   * off up to 9, two beyond. */
+  function matchName(E, words) {
+    var ix = nameIndex(E), ws = [], skip = 0;
+    (words || []).forEach(function (w) {
+      var k = normName(w.text);
+      if (skip > 0) { skip--; return; }
+      if (k.length >= 5 && lev(k, 'evolves', 2) <= 2) { skip = 2; return; }    // "Evolves from X"
+      if (k.length >= 3 && lev(k, 'from', 1) <= 1) { skip = 1; return; }
+      if (/[a-z]{2}/.test(k) && !/^\d+hp$/.test(k) && !NAME_STOP[k]) ws.push({ k: k });
+    });
+    if (!ws.length) return null;
+    var best = null;
+    for (var a = 0; a < ws.length; a++) {
+      var win = '';
+      for (var b = a; b < Math.min(ws.length, a + 4); b++) {
+        win += ws[b].k;
+        var L = win.length;
+        if (L < 3) continue;
+        for (var n = 0; n < ix.keys.length; n++) {
+          var key = ix.keys[n], m = Math.max(key.length, L), max = Math.floor(m * 0.25);
+          var d = lev(win, key, max);
+          if (d > max) continue;
+          var score = 1 - d / m;
+          if (!best || score > best.score + 1e-9 || (Math.abs(score - best.score) < 1e-9 && key.length > best.key.length)) {
+            best = { key: key, score: score, dist: d, read: win };
+          }
+        }
+      }
+    }
+    if (!best) return null;
+    best.name = E.records[ix.byKey[best.key][0]].name;
+    var n = best.key.length;
+    best.ok = best.dist <= (n <= 5 ? 0 : n <= 9 ? 1 : 2);
+    return best;
+  }
+
+  function cardsNamed(E, key) { return (nameIndex(E).byKey[key] || []).slice(); }
 
   /* Plain-text search over local metadata: name words and/or a card number. */
   function search(E, text, limit) {
@@ -414,6 +507,7 @@
 
   global.ScanEngine = {
     status: status, sync: sync, load: load, embed: embed, match: match, search: search,
+    top: top, matchName: matchName, cardsNamed: cardsNamed, normName: normName,
     abs: abs, DATA: DATA,
     setPaused: function (p) { paused = !!p; },
     cpuOnly: cpuOnly, setCpuOnly: setCpuOnly,

@@ -437,28 +437,41 @@
     var slabQuad = quad && slab ? global.CardDetect.slabPhotoQuad(quad, slab, slabKind) : null;
     var photoBlobP = makePhotos(cv, src, quad, slabQuad);
     var labelImage = slabQuad ? makeLabelImage(cv, src, quad, slab) : null;
-    var stamp = quad ? firstEditionStamp(cv, src, quad) : null;
+    var big = quad ? global.CardDetect.warpCard(cv, src, quad, 1000, 1397) : global.CardDetect.fallbackCard(cv, src, 1000, 1397);
+    var stamp = quad ? firstEditionStamp(cv, big) : null;
+    var bands = nameBands(cv, big);
+    big.delete();
+    var nameP = readCardName(bands);       // OCR runs in its worker while the card is embedded
     var tDetect = performance.now() - t0;
     setStage('Reading card (' + backendName() + ')');
     return global.ScanEngine.embed(E, [card]).then(function (q1) {
       setStage('Matching');
       var top = global.ScanEngine.match(E, q1, 5);
-      if (top[0].score >= CONFIDENT) return { top: top, rotated: false };
+      if (top[0].score >= CONFIDENT) return { top: top, rotated: false, scores: E.lastScores };
       // Low score: maybe the card is upside down. Embed it rotated and keep the better.
       var rot = new cv.Mat();
       cv.rotate(card, rot, cv.ROTATE_180);
       setStage('Checking upside down (' + backendName() + ')');
       return global.ScanEngine.embed(E, [rot]).then(function (q2) {
         rot.delete();
-        return { top: global.ScanEngine.match(E, [q1[0], q2[0]], 5), rotated: true };
+        return { top: global.ScanEngine.match(E, [q1[0], q2[0]], 5), rotated: true, scores: E.lastScores };
       });
     }).then(function (r) {
       card.delete(); src.delete();
-      var ms = performance.now() - t0;
-      return photoBlobP.then(function (photos) {
-        return { top: r.top, ms: ms, detectMs: tDetect, detected: !!quad, rotated: r.rotated,
-                 photos: photos, slabKind: slabQuad ? slabKind : null, labelImage: labelImage,
-                 stamp: stamp };
+      setStage('Reading the name');
+      return nameP.then(function (nm) {
+        var named = nm && nm.ok ? rankNamed(r.scores, nm.key) : null;
+        // Safety net for a misread: the picture is sure of another card and
+        // nothing with the read name looks anywhere near as close.
+        if (named && named.length && r.top[0].score >= 0.8 && named[0].score < r.top[0].score - 0.2) named = null;
+        var ms = performance.now() - t0;
+        return photoBlobP.then(function (photos) {
+          return { top: named && named.length ? named : r.top, artTop: r.top, ms: ms, detectMs: tDetect, detected: !!quad,
+                   rotated: r.rotated, photos: photos, slabKind: slabQuad ? slabKind : null, labelImage: labelImage,
+                   stamp: stamp, name: nm && nm.name ? { name: nm.name, score: Math.round(nm.score * 100) / 100, read: nm.read,
+                                                         used: !!(named && named.length), ms: nm.ms } : null,
+                   nameWords: nm && nm.words };
+        });
       });
     }, function (e) {
       try { card.delete(); src.delete(); } catch (x) {}
@@ -495,15 +508,74 @@
   /* 1st Edition stamp templates, loaded once the engine (OpenCV) is up. */
   var stampTemplates = null;
   function preloadStamp() {
+    warmOcr();
     if (stampTemplates || !E || !E.cv) return;
     global.CardDetect.loadStampTemplates(E.cv).then(function (t) { stampTemplates = t; }, function () {});
   }
 
-  /* { score, found } for the 1st Edition stamp, checking the card upside
-   * down too; null when the templates aren't loaded. */
-  function firstEditionStamp(cv, src, quad) {
+  /* ---------------- name filter ----------------
+   * The name band (top of the straightened card, and the bottom turned
+   * upright in case the card is upside down) is read with OCR and snapped to
+   * a catalog name; when that's a confident match, only cards with that name
+   * are ranked by the picture. Anything uncertain (glare, foil, no OCR yet,
+   * slow phone) falls back to the picture-only ranking. */
+  var NAME_WAIT_MS = 4000;
+
+  function nameBands(cv, big) {
+    function band(m) {
+      var r = new cv.Rect(30, 20, 770, 150), roi = m.roi(r), c = document.createElement('canvas');   // x .03-.80, y .015-.12
+      cv.imshow(c, roi); roi.delete();
+      return c;
+    }
+    try {
+      var up = band(big), flipped = new cv.Mat();
+      cv.flip(big, flipped, -1);
+      var down = band(flipped); flipped.delete();
+      return { up: up, down: down };
+    } catch (e) { return null; }
+  }
+
+  /* Resolves the best name read ({ key, name, score, read, ms }) or null;
+   * never rejects, and gives up after NAME_WAIT_MS. */
+  function readCardName(bands) {
+    if (!bands || !global.CardLabel) return Promise.resolve(null);
+    function one(c) {
+      return global.CardLabel.readName(c).then(function (o) {
+        var m = global.ScanEngine.matchName(E, o.words) || { score: 0 };
+        m.ms = o.ms; m.words = o.words;
+        return m;
+      });
+    }
+    var work = one(bands.up).then(function (m) {
+      return m.ok ? m : one(bands.down).then(function (m2) {
+        return m2.ok || m2.score > m.score ? m2 : m;
+      });
+    }).catch(function () { return null; });
+    var timeout = new Promise(function (res) { setTimeout(function () { res(null); }, NAME_WAIT_MS); });
+    return Promise.race([work, timeout]);
+  }
+
+  /* Cards with catalog name key, best picture score first (top 5). */
+  function rankNamed(scores, key) {
+    if (!scores) return null;
+    return global.ScanEngine.cardsNamed(E, key).map(function (i) { return { i: i, score: scores[i] }; })
+      .sort(function (a, b) { return b.score - a.score; }).slice(0, 5);
+  }
+
+  /* Start the OCR worker in the background once the scanner is up, so the
+   * first scan doesn't wait for it. */
+  var ocrWarmed = false;
+  function warmOcr() {
+    if (ocrWarmed || !global.CardLabel) return;
+    ocrWarmed = true;
+    setTimeout(function () { global.CardLabel.warm().catch(function () { ocrWarmed = false; }); }, 800);
+  }
+
+  /* { score, found } for the 1st Edition stamp in a 1000 x 1397 card,
+   * checking it upside down too; null when the templates aren't loaded. */
+  function firstEditionStamp(cv, big) {
     if (!stampTemplates) { preloadStamp(); return null; }
-    var c = global.CardDetect.warpCard(cv, src, quad, 1000, 1397), score = 0;
+    var c = big.clone(), score = 0;
     try {
       score = global.CardDetect.stampScore(cv, c, stampTemplates);
       if (score < global.CardDetect.STAMP_MIN) {
@@ -603,7 +675,8 @@
     var reps = groupReprints(topI);
     var v = {
       res: res, reps: reps, top: res.top,
-      confident: res.top[0].score >= CONFIDENT,
+      // A name read off the card settles which Pokémon it is; the picture only picks the printing.
+      confident: res.top[0].score >= CONFIDENT || !!(res.name && res.name.used),
       selected: reps[0],                 // oldest printing of the art is the default
       defaultSel: reps[0], printingIdx: null, defaultPrinting: null, mode: 'main',
       graded: !!res.slabKind, gradedDefault: !!res.slabKind   // slab or grading label seen around the card
@@ -687,7 +760,7 @@
     if (view.mode === 'search') return renderSearch(s);
     var cr = chosenRecord().record;
     var conf = view.confident
-      ? '<span class="scan-conf ok">' + Math.round(res.top[0].score * 100) + '% match</span>'
+      ? '<span class="scan-conf ok">' + (res.name && res.name.used && !view.manual ? 'Name ✓ · ' : '') + Math.round(res.top[0].score * 100) + '% match</span>'
       : '<span class="scan-conf low">No confident match</span>';
     var html = '<h3>' + esc(cr.name) + conf + '</h3>' +
       '<div class="scan-sub">' + esc(cr.set_name) + ' · ' + esc(num(cr)) + ' · ' + esc(year(cr)) + (cr.rarity ? ' · ' + esc(cr.rarity) : '') + '</div>';
@@ -730,6 +803,8 @@
     }
     html += '<div class="scan-debug">' + Math.round(res.ms) + ' ms · ' + (res.detected ? 'card outline found' : 'no outline, used whole frame') +
       (res.rotated ? ' · checked upside down' : '') + ' · ' + E.backend +
+      (res.name ? ' · name ' + (res.name.used ? 'read: ' : 'unsure: ') + esc(res.name.name) + ' (' + Math.round(res.name.score * 100) + '%)'
+                : (res.top.length ? ' · name not read' : '')) +
       (E.timings.warmup ? ' · model ready in ' + (E.timings.warmup / 1000).toFixed(1) + ' s' : '') +
       (E.gpuError ? ' · GPU problem: ' + esc(E.gpuError.slice(0, 120)) : '') + '</div>';
     s.innerHTML = html;
@@ -1180,6 +1255,8 @@
   global.CardLogScanner = {
     mountStatus: mountStatus, open: open, openBulk: openBulk, sync: startSync, refreshStatus: refreshStatus, scanImage: scanImage,
     addBulkFiles: function (files) { if (bulk) bulkAddFiles(Array.prototype.slice.call(files)); },   // same path as the picker
-    isReady: function () { return !!(E && ui); }
+    isReady: function () { return !!(E && ui); },
+    identify: function (canvas) { return E ? identify(canvas, null) : Promise.reject(new Error('scanner not loaded')); },   // tests
+    record: function (i) { return E && E.records[i]; }
   };
 })(window);
